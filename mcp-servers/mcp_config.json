@@ -1,13 +1,13 @@
-// Antigravity settings → MCP Servers
 {
   "mcpServers": {
     "meta-ads": {
-      "command": "node",
-      "args": ["./mcp-servers/meta-ads-analyzer/server.js"]
-    },
-    "google-ads": {
-      "command": "python",
-      "args": ["./mcp-servers/google-ads-analyzer/server.py"]
+      "command": "npx",
+      "args": ["-y", "meta-ads-mcp"],
+      "env": {
+        "META_ACCESS_TOKEN": "${META_ACCESS_TOKEN}",
+        "META_APP_SECRET": "${META_APP_SECRET}",
+        "META_AD_ACCOUNT_ID": "${META_AD_ACCOUNT_ID}"
+      }
     }
   }
 }
