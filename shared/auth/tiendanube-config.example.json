@@ -1,0 +1,28 @@
+{
+    "_comment": "Tienda Nube / Nuvemshop OAuth2 credentials for ESCALA Partner App. Copy this file to tiendanube-config.json and fill in your values. Never commit the real config file.",
+    "app_id": "YOUR_TIENDANUBE_APP_ID",
+    "client_secret": "YOUR_TIENDANUBE_CLIENT_SECRET",
+    "redirect_uri": "https://escala.app/auth/tiendanube/callback",
+    "scopes": [
+        "read_orders",
+        "read_products",
+        "write_products",
+        "read_customers"
+    ],
+    "user_agent": "ESCALA (hola@escala.app)",
+    "stores": [
+        {
+            "_comment": "One entry per client store that has authorized ESCALA",
+            "store_id": "TIENDANUBE_STORE_ID",
+            "store_name": "Nombre de la tienda",
+            "access_token": "BEARER_ACCESS_TOKEN_FROM_OAUTH",
+            "scopes_granted": [
+                "read_orders",
+                "read_products",
+                "write_products",
+                "read_customers"
+            ],
+            "connected_at": "YYYY-MM-DD"
+        }
+    ]
+}
