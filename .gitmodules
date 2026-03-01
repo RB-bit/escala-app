@@ -1,0 +1,9 @@
+[submodule "mcp-servers/google-ads-analyzer"]
+	path = mcp-servers/google-ads-analyzer
+	url = https://github.com/RB-bit/google-ads-analyzer
+[submodule "mcp-servers/google-ads-mcp"]
+	path = mcp-servers/google-ads-mcp
+	url = https://github.com/RB-bit/google-ads-mcp
+[submodule "mcp-servers/meta-ads-analyzer"]
+	path = mcp-servers/meta-ads-analyzer
+	url = https://github.com/RB-bit/meta-ads-analyzer
