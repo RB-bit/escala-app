@@ -97,7 +97,7 @@ const QUICK_PROMPTS = [
   "Generá reporte semanal",
 ]
 
-const TN_TOKEN = "28d21111011b71080d5668a9155619bb5f52c531"
+const TN_TOKEN = import.meta.env.VITE_TN_TOKEN
 const TN_STORE_ID = "2091475"
 const TN_BASE = `https://api.tiendanube.com/2025-03/${TN_STORE_ID}`
 const TN_HEADERS = {

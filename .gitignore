@@ -1,1 +1,2 @@
 shared/auth/.env
+dashboard/.env.local
