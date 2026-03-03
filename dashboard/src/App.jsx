@@ -116,6 +116,7 @@ export default function App() {
     { id: "consolidated", icon: "📊", label: "Todas las marcas" },
     { id: "dashboard", icon: "⚡", label: "Dashboard" },
     { id: "campaigns", icon: "📈", label: "Campañas", badge: isConsolidated ? null : String(campaigns.filter(c => c.status === "active").length) },
+    { id: "ads", icon: "🎯", label: "Creación de Ads" },
     { id: "tiendanube", icon: "🛍️", label: "Tienda Nube", badge: tnFetched ? String(tnOrders.length) : null },
     { id: "connections", icon: "🔗", label: "Conexiones", badge: isConsolidated ? null : `${connections.filter(c => c.status === "connected").length}/${connections.length}` },
     { id: "progress", icon: "🗺️", label: "Mi Progreso" },
@@ -222,6 +223,8 @@ export default function App() {
         )}
 
         {activeTab === "campaigns" && !isConsolidated && <CampaignsTab selectedBrand={selectedBrand} campaigns={campaigns} />}
+
+        {activeTab === "ads" && !isConsolidated && <AdsTab brand={selectedBrand} />}
 
         {activeTab === "connections" && !isConsolidated && <ConnectionsTab selectedBrand={selectedBrand} connections={connections} />}
 
