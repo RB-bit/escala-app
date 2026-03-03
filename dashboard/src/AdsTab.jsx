@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react"
 
 // ─── CONFIG ────────────────────────────────────────────────────────────────────
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
+console.log('CLIENT_ID:', GOOGLE_CLIENT_ID ? '[DEFINED ✓]' : '[UNDEFINED ✗ — check .env.local]')
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
 
@@ -356,71 +357,39 @@ function RoadmapStep({ brand }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // STEP 3 — ASSETS & DRIVE
 // ══════════════════════════════════════════════════════════════════════════════
-function AssetsStep({ brand, onSelectFiles }) {
-  const [gapiLoaded, setGapiLoaded] = useState(false)
-  const [gisLoaded, setGisLoaded] = useState(false)
-  const [signedIn, setSignedIn] = useState(false)
+function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady, tokenClientRef }) {
   const [files, setFiles] = useState([])
   const [folderStack, setFolderStack] = useState([{ id: "root", name: "Mi Drive" }])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState([])
   const [error, setError] = useState(null)
-  const tokenClientRef = useRef(null)
-
-  const scriptsReady = gapiLoaded && gisLoaded
-
-  // Load GAPI + GIS scripts independently
-  useEffect(() => {
-    // ── GAPI ──
-    const initGapi = () => {
-      window.gapi.load("client", async () => {
-        await window.gapi.client.init({ discoveryDocs: [DISCOVERY_DOC] })
-        setGapiLoaded(true)
-      })
-    }
-    if (window.gapi) {
-      initGapi()
-    } else {
-      const gapiScript = document.createElement("script")
-      gapiScript.src = "https://apis.google.com/js/api.js"
-      gapiScript.onload = initGapi
-      document.head.appendChild(gapiScript)
-    }
-
-    // ── GIS ──
-    const initGis = () => {
-      tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: DRIVE_SCOPE,
-        callback: (resp) => {
-          if (resp.error) { setError("Error de autenticación: " + resp.error); return }
-          setSignedIn(true)
-          listFiles("root")
-        }
-      })
-      setGisLoaded(true)
-    }
-    if (window.google?.accounts) {
-      initGis()
-    } else {
-      const gisScript = document.createElement("script")
-      gisScript.src = "https://accounts.google.com/gsi/client"
-      gisScript.onload = initGis
-      document.head.appendChild(gisScript)
-    }
-  }, [])
+  const [search, setSearch] = useState("")
+  const [pathInput, setPathInput] = useState("")
+  const [showPathInput, setShowPathInput] = useState(false)
 
   const signIn = () => {
     if (!scriptsReady || !tokenClientRef.current) {
       setError("Los scripts de Google aún no cargaron. Esperá un momento e intentá de nuevo.")
       return
     }
+    // Update callback in case it wasn't bound to setSignedIn yet
+    tokenClientRef.current.callback = (resp) => {
+      if (resp.error) { setError("Error de autenticación: " + resp.error); return }
+      setSignedIn(true)
+    }
     tokenClientRef.current.requestAccessToken()
   }
+
+  useEffect(() => {
+    if (signedIn && folderStack.length === 1 && files.length === 0 && !loading) {
+      listFiles(folderStack[0].id)
+    }
+  }, [signedIn])
 
   const listFiles = async (folderId) => {
     setLoading(true)
     setError(null)
+    setSearch("")
     try {
       const res = await window.gapi.client.drive.files.list({
         q: `'${folderId}' in parents and trashed=false`,
@@ -448,6 +417,20 @@ function AssetsStep({ brand, onSelectFiles }) {
     listFiles(newStack[newStack.length - 1].id)
   }
 
+  const navigateToId = (rawInput) => {
+    const trimmed = rawInput.trim()
+    if (!trimmed) return
+    // Extract folder ID from a Drive URL like .../folders/FOLDER_ID or just raw ID
+    const match = trimmed.match(/folders\/([a-zA-Z0-9_-]+)/)
+    const folderId = match ? match[1] : trimmed
+    const folderName = `ID: ${folderId.slice(0, 12)}…`
+    setFolderStack([{ id: "root", name: "Mi Drive" }, { id: folderId, name: folderName }])
+    setFiles([])
+    setPathInput("")
+    setShowPathInput(false)
+    listFiles(folderId)
+  }
+
   const toggleSelect = (file) => {
     if (isFolder(file)) return
     setSelected(prev => {
@@ -459,6 +442,9 @@ function AssetsStep({ brand, onSelectFiles }) {
   }
 
   const currentFolder = folderStack[folderStack.length - 1]
+  const filteredFiles = search.trim()
+    ? files.filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
+    : files
 
   if (!signedIn) return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -482,15 +468,29 @@ function AssetsStep({ brand, onSelectFiles }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      {/* Breadcrumb */}
+      {/* ── Breadcrumb ── */}
       <div style={s.card}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "14px" }}>📂</span>
           {folderStack.map((f, i) => (
-            <span key={f.id} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              {i > 0 && <span style={{ color: "#3a3a55" }}>/</span>}
+            <span key={f.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {i > 0 && <span style={{ color: "#3a3a55", fontSize: "12px" }}>/</span>}
               <span
-                onClick={() => { if (i < folderStack.length - 1) { const ns = folderStack.slice(0, i + 1); setFolderStack(ns); listFiles(f.id) } }}
-                style={{ fontFamily: "monospace", fontSize: "12px", color: i === folderStack.length - 1 ? "#f0f0f8" : "#5a5a78", cursor: i < folderStack.length - 1 ? "pointer" : "default" }}
+                onClick={() => {
+                  if (i < folderStack.length - 1) {
+                    const ns = folderStack.slice(0, i + 1)
+                    setFolderStack(ns)
+                    listFiles(f.id)
+                  }
+                }}
+                style={{
+                  fontFamily: "monospace", fontSize: "12px",
+                  color: i === folderStack.length - 1 ? "#f0f0f8" : "#5a5a78",
+                  cursor: i < folderStack.length - 1 ? "pointer" : "default",
+                  padding: "2px 6px", borderRadius: "4px",
+                  background: i === folderStack.length - 1 ? "rgba(255,255,255,0.05)" : "transparent",
+                  textDecoration: i < folderStack.length - 1 ? "underline" : "none",
+                }}
               >{f.name}</span>
             </span>
           ))}
@@ -499,7 +499,41 @@ function AssetsStep({ brand, onSelectFiles }) {
               <button onClick={goBack} style={s.btn("#5a5a78", "outline")}>← Volver</button>
             )}
             <button onClick={() => listFiles(currentFolder.id)} style={s.btn("#5a5a78", "outline")}>↻</button>
+            <button onClick={() => setShowPathInput(p => !p)} style={s.btn("#5a5a78", "outline")} title="Ir a carpeta por URL o ID">🔗 Ir a carpeta</button>
           </div>
+        </div>
+
+        {/* ── Direct path input ── */}
+        {showPathInput && (
+          <div style={{ marginBottom: "12px", display: "flex", gap: "8px", alignItems: "center" }}>
+            <input
+              value={pathInput}
+              onChange={e => setPathInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && navigateToId(pathInput)}
+              placeholder="Pegá una URL de Drive o un Folder ID…"
+              style={{ ...s.input, flex: 1, fontSize: "12px", padding: "8px 12px" }}
+              autoFocus
+            />
+            <button onClick={() => navigateToId(pathInput)} style={s.btn()}>Ir</button>
+            <button onClick={() => { setShowPathInput(false); setPathInput("") }} style={s.btn("#5a5a78", "outline")}>✕</button>
+          </div>
+        )}
+
+        {/* ── Search bar ── */}
+        <div style={{ marginBottom: "12px", position: "relative" }}>
+          <span style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", pointerEvents: "none" }}>🔍</span>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar archivos en esta carpeta…"
+            style={{ ...s.input, paddingLeft: "32px", fontSize: "12px", padding: "8px 12px 8px 32px" }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#5a5a78", cursor: "pointer", fontSize: "13px" }}
+            >✕</button>
+          )}
         </div>
 
         {/* Selection bar */}
@@ -516,20 +550,27 @@ function AssetsStep({ brand, onSelectFiles }) {
 
         {error && <div style={{ marginBottom: "12px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>⚠ {error}</div>}
 
-        {/* File grid */}
+        {/* ── search result label ── */}
+        {search && !loading && (
+          <div style={{ marginBottom: "8px", fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>
+            {filteredFiles.length} resultado{filteredFiles.length !== 1 ? "s" : ""} para "{search}"
+          </div>
+        )}
+
+        {/* ── File grid ── */}
         {loading ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
             {[0, 1, 2, 3, 4, 5, 6, 7].map(i => (
               <div key={i} style={{ height: "120px", background: "#13131f", borderRadius: "6px", animation: "pulse 1.5s ease-in-out infinite" }} />
             ))}
           </div>
-        ) : files.length === 0 ? (
+        ) : filteredFiles.length === 0 ? (
           <div style={{ textAlign: "center", padding: "32px", fontFamily: "monospace", fontSize: "12px", color: "#5a5a78" }}>
-            📂 Carpeta vacía o sin archivos de imagen/video
+            {search ? `⚠ Sin resultados para "${search}"` : "📂 Carpeta vacía o sin archivos de imagen/video"}
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
-            {files.map(file => {
+            {filteredFiles.map(file => {
               const sel = selected.find(f => f.id === file.id)
               const folder = isFolder(file)
               return (
@@ -702,6 +743,50 @@ export default function AdsTab({ brand }) {
   const [step, setStep] = useState("research")
   const [selectedFiles, setSelectedFiles] = useState([])
 
+  // ── Google auth lifted here so it persists across step navigation ──
+  const [gapiLoaded, setGapiLoaded] = useState(false)
+  const [gisLoaded, setGisLoaded] = useState(false)
+  const [signedIn, setSignedIn] = useState(false)
+  const tokenClientRef = useRef(null)
+  const scriptsReady = gapiLoaded && gisLoaded
+
+  useEffect(() => {
+    // ── GAPI ──
+    const initGapi = () => {
+      window.gapi.load("client", async () => {
+        await window.gapi.client.init({ discoveryDocs: [DISCOVERY_DOC] })
+        setGapiLoaded(true)
+      })
+    }
+    if (window.gapi) { initGapi() }
+    else {
+      const gapiScript = document.createElement("script")
+      gapiScript.src = "https://apis.google.com/js/api.js"
+      gapiScript.onload = initGapi
+      document.head.appendChild(gapiScript)
+    }
+
+    // ── GIS ──
+    const initGis = () => {
+      tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: DRIVE_SCOPE,
+        callback: (resp) => {
+          if (resp.error) return
+          setSignedIn(true)
+        }
+      })
+      setGisLoaded(true)
+    }
+    if (window.google?.accounts) { initGis() }
+    else {
+      const gisScript = document.createElement("script")
+      gisScript.src = "https://accounts.google.com/gsi/client"
+      gisScript.onload = initGis
+      document.head.appendChild(gisScript)
+    }
+  }, [])
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       {/* Header */}
@@ -744,7 +829,7 @@ export default function AdsTab({ brand }) {
       {/* Step content */}
       {step === "research" && <ResearchStep brand={brand} />}
       {step === "roadmap" && <RoadmapStep brand={brand} />}
-      {step === "assets" && <AssetsStep brand={brand} onSelectFiles={setSelectedFiles} />}
+      {step === "assets" && <AssetsStep brand={brand} onSelectFiles={setSelectedFiles} signedIn={signedIn} setSignedIn={setSignedIn} scriptsReady={scriptsReady} tokenClientRef={tokenClientRef} />}
       {step === "launch" && <LaunchStep brand={brand} selectedFiles={selectedFiles} />}
 
       {/* Step navigation */}
