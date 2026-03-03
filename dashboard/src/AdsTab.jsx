@@ -1,0 +1,769 @@
+import { useState, useEffect, useRef } from "react"
+
+// ─── CONFIG ────────────────────────────────────────────────────────────────────
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
+
+// ─── STEPS ─────────────────────────────────────────────────────────────────────
+const STEPS = [
+  { id: "research", icon: "🔍", label: "Research" },
+  { id: "roadmap", icon: "🗺️", label: "Creative Roadmap" },
+  { id: "assets", icon: "📁", label: "Assets & Drive" },
+  { id: "launch", icon: "🚀", label: "Lanzamiento" },
+]
+
+// ─── MOCK CAMPAIGN DATA FOR LAUNCH STEP ────────────────────────────────────────
+const MOCK_CAMPAIGNS = [
+  { id: "c1", name: "CBO - NAVIDAD 3/12/25", status: "active" },
+  { id: "c2", name: "CBO - HOT SALE Mayo", status: "paused" },
+  { id: "c3", name: "Retargeting — Carrito Abandonado", status: "active" },
+]
+
+// ─── HELPER ────────────────────────────────────────────────────────────────────
+const fmt = (bytes) => {
+  if (!bytes) return "—"
+  if (bytes < 1024) return bytes + " B"
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB"
+  return (bytes / 1048576).toFixed(1) + " MB"
+}
+
+const isMedia = (f) =>
+  f.mimeType?.startsWith("image/") ||
+  f.mimeType?.startsWith("video/") ||
+  f.mimeType === "application/vnd.google-apps.folder"
+
+const isFolder = (f) => f.mimeType === "application/vnd.google-apps.folder"
+
+// ─── STYLES ────────────────────────────────────────────────────────────────────
+const s = {
+  card: { background: "#0e0e1a", border: "1px solid #1c1c2e", borderRadius: "8px", padding: "20px" },
+  label: { fontFamily: "monospace", fontSize: "10px", letterSpacing: "0.12em", color: "#5a5a78", marginBottom: "8px" },
+  tag: (color, active) => ({
+    fontFamily: "monospace", fontSize: "10px", padding: "3px 8px", borderRadius: "3px",
+    background: active ? `${color}20` : "rgba(90,90,120,0.15)",
+    color: active ? color : "#5a5a78",
+    border: `1px solid ${active ? color + "40" : "transparent"}`,
+  }),
+  btn: (color = "#e8ff47", variant = "primary") => ({
+    display: "flex", alignItems: "center", gap: "6px",
+    padding: "8px 16px", borderRadius: "6px", cursor: "pointer",
+    fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: "13px", fontWeight: "700",
+    border: variant === "primary" ? "none" : `1px solid ${color}40`,
+    background: variant === "primary" ? color : "transparent",
+    color: variant === "primary" ? "#000" : color,
+    transition: "all 0.15s",
+    opacity: 1,
+  }),
+  input: {
+    width: "100%", background: "#13131f", border: "1px solid #252538", borderRadius: "6px",
+    padding: "10px 14px", color: "#f0f0f8", fontFamily: "'Bricolage Grotesque', sans-serif",
+    fontSize: "13px", outline: "none",
+  },
+  table: { width: "100%", borderCollapse: "collapse" },
+  th: { fontFamily: "monospace", fontSize: "10px", letterSpacing: "0.1em", color: "#5a5a78", textAlign: "left", padding: "8px 12px", borderBottom: "1px solid #1c1c2e" },
+  td: { padding: "11px 12px", fontSize: "13px", borderBottom: "1px solid #1c1c2e" },
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STEP 1 — RESEARCH
+// ══════════════════════════════════════════════════════════════════════════════
+function ResearchStep({ brand }) {
+  const [loading, setLoading] = useState(false)
+  const [report, setReport] = useState(null)
+  const [error, setError] = useState(null)
+
+  const campaigns = brand?.campaigns ?? []
+  const activeCampaigns = campaigns.filter(c => c.status === "active")
+  const avgRoas = activeCampaigns.length
+    ? (activeCampaigns.reduce((a, c) => a + c.roas, 0) / activeCampaigns.length).toFixed(1)
+    : 0
+  const fatiguing = campaigns.filter(c => c.roas < 2.5 && c.status === "active")
+
+  const runAnalysis = async () => {
+    setLoading(true)
+    setError(null)
+    const prompt = `Analizá estas campañas de Meta Ads para la marca "${brand?.name}" y generá un reporte de inteligencia creativa en español.
+
+Campañas activas:
+${campaigns.map(c => `- ${c.name}: ROAS ${c.roas}x, estado ${c.status}, gastado ${c.spent} de ${c.budget}, impresiones ${c.impressions}`).join("\n")}
+
+Respondé SOLO con un JSON válido con esta estructura exacta (sin markdown, sin backticks):
+{
+  "resumen": "2-3 oraciones sobre el estado general de la cuenta",
+  "ganadores": [{"nombre": "...", "motivo": "..."}],
+  "fatigando": [{"nombre": "...", "señal": "..."}],
+  "conceptos": [
+    {"titulo": "...", "angulo": "...", "formato": "imagen|video|carrusel|reel", "prioridad": "alta|media"}
+  ],
+  "accion_inmediata": "una acción concreta a tomar hoy"
+}`
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }]
+        })
+      })
+      const data = await res.json()
+      const text = data.content?.[0]?.text || ""
+      const clean = text.replace(/```json|```/g, "").trim()
+      setReport(JSON.parse(clean))
+    } catch (e) {
+      setError("Error al generar el análisis. Intentá de nuevo.")
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Header */}
+      <div style={{ ...s.card }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <div>
+            <div style={{ fontWeight: "800", fontSize: "15px", marginBottom: "4px" }}>📊 Análisis de cuenta publicitaria</div>
+            <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>
+              {campaigns.length} campañas · ROAS promedio {avgRoas}x
+            </div>
+          </div>
+          <button onClick={runAnalysis} disabled={loading} style={s.btn()}>
+            {loading ? "⟳ Analizando…" : "⚡ Generar análisis"}
+          </button>
+        </div>
+
+        {/* Quick stats */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "10px" }}>
+          {[
+            { label: "CAMPAÑAS ACTIVAS", value: String(activeCampaigns.length), color: "#47ffc8" },
+            { label: "ROAS PROMEDIO", value: avgRoas + "x", color: "#e8ff47" },
+            { label: "FATIGANDO", value: String(fatiguing.length), color: fatiguing.length > 0 ? "#ff6b47" : "#47ffc8" },
+          ].map((stat, i) => (
+            <div key={i} style={{ background: "#13131f", borderRadius: "6px", padding: "12px 14px", borderTop: `2px solid ${stat.color}` }}>
+              <div style={s.label}>{stat.label}</div>
+              <div style={{ fontFamily: "monospace", fontSize: "20px", fontWeight: "800", color: stat.color }}>{stat.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {error && (
+        <div style={{ padding: "12px 16px", background: "rgba(255,107,71,0.08)", border: "1px solid rgba(255,107,71,0.3)", borderRadius: "6px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>
+          ⚠ {error}
+        </div>
+      )}
+
+      {/* Report */}
+      {report && (
+        <>
+          {/* Resumen */}
+          <div style={s.card}>
+            <div style={s.label}>RESUMEN EJECUTIVO</div>
+            <div style={{ fontSize: "14px", lineHeight: "1.6", color: "#c8c8e8" }}>{report.resumen}</div>
+            {report.accion_inmediata && (
+              <div style={{ marginTop: "12px", padding: "10px 14px", background: "rgba(232,255,71,0.06)", border: "1px solid rgba(232,255,71,0.2)", borderRadius: "6px" }}>
+                <span style={{ fontFamily: "monospace", fontSize: "10px", color: "#e8ff47", marginRight: "8px" }}>ACCIÓN HOY →</span>
+                <span style={{ fontSize: "13px" }}>{report.accion_inmediata}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Ganadores y fatigando */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+            <div style={s.card}>
+              <div style={s.label}>🏆 GANADORES</div>
+              {report.ganadores?.map((g, i) => (
+                <div key={i} style={{ padding: "8px 0", borderBottom: "1px solid #1c1c2e" }}>
+                  <div style={{ fontSize: "13px", fontWeight: "600", color: "#47ffc8", marginBottom: "2px" }}>{g.nombre}</div>
+                  <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>{g.motivo}</div>
+                </div>
+              ))}
+            </div>
+            <div style={s.card}>
+              <div style={s.label}>⚠ FATIGANDO</div>
+              {report.fatigando?.length > 0 ? report.fatigando.map((f, i) => (
+                <div key={i} style={{ padding: "8px 0", borderBottom: "1px solid #1c1c2e" }}>
+                  <div style={{ fontSize: "13px", fontWeight: "600", color: "#ff6b47", marginBottom: "2px" }}>{f.nombre}</div>
+                  <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>{f.señal}</div>
+                </div>
+              )) : (
+                <div style={{ fontFamily: "monospace", fontSize: "12px", color: "#47ffc8", paddingTop: "8px" }}>✓ Sin campañas fatigando</div>
+              )}
+            </div>
+          </div>
+
+          {/* Conceptos */}
+          <div style={s.card}>
+            <div style={s.label}>💡 CONCEPTOS A TESTEAR ESTA SEMANA</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "4px" }}>
+              {report.conceptos?.map((c, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "12px", padding: "12px", background: "#13131f", borderRadius: "6px", border: "1px solid #1c1c2e" }}>
+                  <div style={{ fontFamily: "monospace", fontSize: "11px", padding: "3px 8px", borderRadius: "3px", background: "rgba(232,255,71,0.1)", color: "#e8ff47", flexShrink: 0 }}>#{i + 1}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: "700", fontSize: "13px", marginBottom: "4px" }}>{c.titulo}</div>
+                    <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78", marginBottom: "8px" }}>{c.angulo}</div>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <span style={s.tag("#c47bff", true)}>{c.formato}</span>
+                      <span style={s.tag(c.prioridad === "alta" ? "#ff6b47" : "#e8ff47", true)}>{c.prioridad}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {!report && !loading && (
+        <div style={{ ...s.card, textAlign: "center", padding: "40px" }}>
+          <div style={{ fontSize: "32px", marginBottom: "12px" }}>🔍</div>
+          <div style={{ fontWeight: "700", marginBottom: "6px" }}>Sin análisis generado</div>
+          <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>
+            Hacé click en "Generar análisis" para que Claude analice tus campañas y sugiera los próximos conceptos a testear.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STEP 2 — CREATIVE ROADMAP
+// ══════════════════════════════════════════════════════════════════════════════
+function RoadmapStep({ brand }) {
+  const [items, setItems] = useState([])
+  const [form, setForm] = useState({ titulo: "", angulo: "", formato: "imagen", prioridad: "media", estado: "pendiente", hipotesis: "" })
+  const [adding, setAdding] = useState(false)
+
+  const estados = { pendiente: "#5a5a78", en_progreso: "#e8ff47", lanzado: "#47ffc8", pausado: "#ff6b47" }
+  const formatos = ["imagen", "video", "reel", "carrusel"]
+  const prioridades = ["alta", "media", "baja"]
+
+  const add = () => {
+    if (!form.titulo.trim()) return
+    setItems(prev => [...prev, { ...form, id: Date.now(), fecha: new Date().toLocaleDateString("es-AR") }])
+    setForm({ titulo: "", angulo: "", formato: "imagen", prioridad: "media", estado: "pendiente", hipotesis: "" })
+    setAdding(false)
+  }
+
+  const toggleEstado = (id) => {
+    const cycle = { pendiente: "en_progreso", en_progreso: "lanzado", lanzado: "pausado", pausado: "pendiente" }
+    setItems(prev => prev.map(i => i.id === id ? { ...i, estado: cycle[i.estado] } : i))
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div style={{ ...s.card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontWeight: "800", fontSize: "15px", marginBottom: "4px" }}>🗺️ Creative Roadmap</div>
+          <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>
+            {items.length} hipótesis documentadas · {items.filter(i => i.estado === "lanzado").length} lanzadas
+          </div>
+        </div>
+        <button onClick={() => setAdding(true)} style={s.btn()}>+ Nueva hipótesis</button>
+      </div>
+
+      {/* Form */}
+      {adding && (
+        <div style={s.card}>
+          <div style={s.label}>NUEVA HIPÓTESIS CREATIVA</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "8px" }}>
+            <input value={form.titulo} onChange={e => setForm(p => ({ ...p, titulo: e.target.value }))}
+              placeholder="Título del concepto" style={s.input} />
+            <input value={form.angulo} onChange={e => setForm(p => ({ ...p, angulo: e.target.value }))}
+              placeholder="Ángulo creativo (ej: problema-solución, aspiracional, social proof)" style={s.input} />
+            <textarea value={form.hipotesis} onChange={e => setForm(p => ({ ...p, hipotesis: e.target.value }))}
+              placeholder="Hipótesis: ¿Por qué creés que este concepto va a funcionar?"
+              style={{ ...s.input, minHeight: "80px", resize: "vertical" }} />
+            <div style={{ display: "flex", gap: "10px" }}>
+              <div style={{ flex: 1 }}>
+                <div style={s.label}>FORMATO</div>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {formatos.map(f => (
+                    <button key={f} onClick={() => setForm(p => ({ ...p, formato: f }))}
+                      style={{ ...s.tag("#c47bff", form.formato === f), padding: "5px 10px", cursor: "pointer", border: `1px solid ${form.formato === f ? "#c47bff40" : "#1c1c2e"}` }}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={s.label}>PRIORIDAD</div>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  {prioridades.map(p => (
+                    <button key={p} onClick={() => setForm(prev => ({ ...prev, prioridad: p }))}
+                      style={{ ...s.tag(p === "alta" ? "#ff6b47" : p === "media" ? "#e8ff47" : "#5a5a78", form.prioridad === p), padding: "5px 10px", cursor: "pointer", border: `1px solid ${form.prioridad === p ? "#ffffff20" : "#1c1c2e"}` }}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <button onClick={() => setAdding(false)} style={s.btn("#5a5a78", "outline")}>Cancelar</button>
+              <button onClick={add} style={s.btn()}>Guardar hipótesis</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      {items.length > 0 ? (
+        <div style={s.card}>
+          <table style={s.table}>
+            <thead>
+              <tr>{["CONCEPTO", "FORMATO", "PRIORIDAD", "ESTADO", "FECHA"].map(h => (
+                <th key={h} style={s.th}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {items.map((item, i) => (
+                <tr key={item.id} style={{ background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
+                  <td style={s.td}>
+                    <div style={{ fontWeight: "600" }}>{item.titulo}</div>
+                    {item.angulo && <div style={{ fontFamily: "monospace", fontSize: "10px", color: "#5a5a78", marginTop: "2px" }}>{item.angulo}</div>}
+                  </td>
+                  <td style={s.td}><span style={s.tag("#c47bff", true)}>{item.formato}</span></td>
+                  <td style={s.td}><span style={s.tag(item.prioridad === "alta" ? "#ff6b47" : item.prioridad === "media" ? "#e8ff47" : "#5a5a78", true)}>{item.prioridad}</span></td>
+                  <td style={s.td}>
+                    <button onClick={() => toggleEstado(item.id)}
+                      style={{ ...s.tag(estados[item.estado], true), cursor: "pointer", padding: "4px 10px" }}>
+                      {item.estado.replace("_", " ")}
+                    </button>
+                  </td>
+                  <td style={{ ...s.td, fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>{item.fecha}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : !adding && (
+        <div style={{ ...s.card, textAlign: "center", padding: "40px" }}>
+          <div style={{ fontSize: "32px", marginBottom: "12px" }}>🗺️</div>
+          <div style={{ fontWeight: "700", marginBottom: "6px" }}>Sin hipótesis documentadas</div>
+          <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>
+            Usá el análisis del paso anterior para generar tus primeras hipótesis creativas.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STEP 3 — ASSETS & DRIVE
+// ══════════════════════════════════════════════════════════════════════════════
+function AssetsStep({ brand, onSelectFiles }) {
+  const [gapiLoaded, setGapiLoaded] = useState(false)
+  const [gisLoaded, setGisLoaded] = useState(false)
+  const [signedIn, setSignedIn] = useState(false)
+  const [files, setFiles] = useState([])
+  const [folderStack, setFolderStack] = useState([{ id: "root", name: "Mi Drive" }])
+  const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState([])
+  const [error, setError] = useState(null)
+  const tokenClientRef = useRef(null)
+
+  const scriptsReady = gapiLoaded && gisLoaded
+
+  // Load GAPI + GIS scripts independently
+  useEffect(() => {
+    // ── GAPI ──
+    const initGapi = () => {
+      window.gapi.load("client", async () => {
+        await window.gapi.client.init({ discoveryDocs: [DISCOVERY_DOC] })
+        setGapiLoaded(true)
+      })
+    }
+    if (window.gapi) {
+      initGapi()
+    } else {
+      const gapiScript = document.createElement("script")
+      gapiScript.src = "https://apis.google.com/js/api.js"
+      gapiScript.onload = initGapi
+      document.head.appendChild(gapiScript)
+    }
+
+    // ── GIS ──
+    const initGis = () => {
+      tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: DRIVE_SCOPE,
+        callback: (resp) => {
+          if (resp.error) { setError("Error de autenticación: " + resp.error); return }
+          setSignedIn(true)
+          listFiles("root")
+        }
+      })
+      setGisLoaded(true)
+    }
+    if (window.google?.accounts) {
+      initGis()
+    } else {
+      const gisScript = document.createElement("script")
+      gisScript.src = "https://accounts.google.com/gsi/client"
+      gisScript.onload = initGis
+      document.head.appendChild(gisScript)
+    }
+  }, [])
+
+  const signIn = () => {
+    if (!scriptsReady || !tokenClientRef.current) {
+      setError("Los scripts de Google aún no cargaron. Esperá un momento e intentá de nuevo.")
+      return
+    }
+    tokenClientRef.current.requestAccessToken()
+  }
+
+  const listFiles = async (folderId) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await window.gapi.client.drive.files.list({
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: "files(id,name,mimeType,size,thumbnailLink,modifiedTime)",
+        orderBy: "folder,name",
+        pageSize: 50,
+      })
+      setFiles(res.result.files.filter(isMedia))
+    } catch (e) {
+      setError("Error al listar archivos: " + (e.result?.error?.message || e.message))
+    }
+    setLoading(false)
+  }
+
+  const openFolder = (folder) => {
+    setFolderStack(prev => [...prev, { id: folder.id, name: folder.name }])
+    setFiles([])
+    listFiles(folder.id)
+  }
+
+  const goBack = () => {
+    if (folderStack.length <= 1) return
+    const newStack = folderStack.slice(0, -1)
+    setFolderStack(newStack)
+    listFiles(newStack[newStack.length - 1].id)
+  }
+
+  const toggleSelect = (file) => {
+    if (isFolder(file)) return
+    setSelected(prev => {
+      const exists = prev.find(f => f.id === file.id)
+      const next = exists ? prev.filter(f => f.id !== file.id) : [...prev, file]
+      onSelectFiles?.(next)
+      return next
+    })
+  }
+
+  const currentFolder = folderStack[folderStack.length - 1]
+
+  if (!signedIn) return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div style={{ ...s.card, textAlign: "center", padding: "48px 24px" }}>
+        <div style={{ fontSize: "40px", marginBottom: "16px" }}>📁</div>
+        <div style={{ fontWeight: "800", fontSize: "18px", marginBottom: "8px" }}>Conectá tu Google Drive</div>
+        <div style={{ fontFamily: "monospace", fontSize: "12px", color: "#5a5a78", marginBottom: "24px", maxWidth: "360px", margin: "0 auto 24px" }}>
+          Autorizá el acceso para explorar tus carpetas y seleccionar los assets que querés subir a Meta Ads.
+        </div>
+        {error && <div style={{ marginBottom: "16px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>⚠ {error}</div>}
+        <button
+          onClick={signIn}
+          disabled={!scriptsReady}
+          style={{ ...s.btn(), margin: "0 auto", padding: "12px 28px", fontSize: "14px", opacity: scriptsReady ? 1 : 0.5, cursor: scriptsReady ? "pointer" : "wait" }}
+        >
+          {scriptsReady ? "Conectar Google Drive" : "⟳ Cargando Google..."}
+        </button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Breadcrumb */}
+      <div style={s.card}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+          {folderStack.map((f, i) => (
+            <span key={f.id} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              {i > 0 && <span style={{ color: "#3a3a55" }}>/</span>}
+              <span
+                onClick={() => { if (i < folderStack.length - 1) { const ns = folderStack.slice(0, i + 1); setFolderStack(ns); listFiles(f.id) } }}
+                style={{ fontFamily: "monospace", fontSize: "12px", color: i === folderStack.length - 1 ? "#f0f0f8" : "#5a5a78", cursor: i < folderStack.length - 1 ? "pointer" : "default" }}
+              >{f.name}</span>
+            </span>
+          ))}
+          <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
+            {folderStack.length > 1 && (
+              <button onClick={goBack} style={s.btn("#5a5a78", "outline")}>← Volver</button>
+            )}
+            <button onClick={() => listFiles(currentFolder.id)} style={s.btn("#5a5a78", "outline")}>↻</button>
+          </div>
+        </div>
+
+        {/* Selection bar */}
+        {selected.length > 0 && (
+          <div style={{ marginBottom: "12px", padding: "10px 14px", background: "rgba(232,255,71,0.08)", border: "1px solid rgba(232,255,71,0.2)", borderRadius: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#e8ff47" }}>
+              {selected.length} archivo{selected.length > 1 ? "s" : ""} seleccionado{selected.length > 1 ? "s" : ""}
+            </span>
+            <button onClick={() => { setSelected([]); onSelectFiles?.([]) }} style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78", background: "none", border: "none", cursor: "pointer" }}>
+              Limpiar selección
+            </button>
+          </div>
+        )}
+
+        {error && <div style={{ marginBottom: "12px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>⚠ {error}</div>}
+
+        {/* File grid */}
+        {loading ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
+            {[0, 1, 2, 3, 4, 5, 6, 7].map(i => (
+              <div key={i} style={{ height: "120px", background: "#13131f", borderRadius: "6px", animation: "pulse 1.5s ease-in-out infinite" }} />
+            ))}
+          </div>
+        ) : files.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "32px", fontFamily: "monospace", fontSize: "12px", color: "#5a5a78" }}>
+            📂 Carpeta vacía o sin archivos de imagen/video
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
+            {files.map(file => {
+              const sel = selected.find(f => f.id === file.id)
+              const folder = isFolder(file)
+              return (
+                <div
+                  key={file.id}
+                  onClick={() => folder ? openFolder(file) : toggleSelect(file)}
+                  style={{
+                    background: sel ? "rgba(232,255,71,0.08)" : "#13131f",
+                    border: sel ? "1px solid rgba(232,255,71,0.4)" : "1px solid #1c1c2e",
+                    borderRadius: "6px", padding: "10px", cursor: "pointer",
+                    transition: "all 0.15s", position: "relative",
+                  }}
+                >
+                  {sel && (
+                    <div style={{ position: "absolute", top: "6px", right: "6px", width: "18px", height: "18px", borderRadius: "50%", background: "#e8ff47", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "800", color: "#000" }}>✓</div>
+                  )}
+                  <div style={{ height: "80px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "8px", borderRadius: "4px", overflow: "hidden", background: "#080810" }}>
+                    {file.thumbnailLink ? (
+                      <img src={file.thumbnailLink} alt={file.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <span style={{ fontSize: "28px" }}>{folder ? "📂" : file.mimeType?.startsWith("video/") ? "🎬" : "🖼️"}</span>
+                    )}
+                  </div>
+                  <div style={{ fontFamily: "monospace", fontSize: "10px", color: folder ? "#e8ff47" : "#f0f0f8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {file.name}
+                  </div>
+                  {!folder && file.size && (
+                    <div style={{ fontFamily: "monospace", fontSize: "9px", color: "#5a5a78", marginTop: "2px" }}>{fmt(parseInt(file.size))}</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STEP 4 — LAUNCH
+// ══════════════════════════════════════════════════════════════════════════════
+function LaunchStep({ brand, selectedFiles }) {
+  const [instructions, setInstructions] = useState("")
+  const [selectedCampaign, setSelectedCampaign] = useState("")
+  const [launching, setLaunching] = useState(false)
+  const [result, setResult] = useState(null)
+
+  const campaigns = brand?.campaigns ?? []
+  const activeCampaigns = campaigns.filter(c => c.status === "active")
+
+  const launch = async () => {
+    if (!instructions.trim() || selectedFiles.length === 0) return
+    setLaunching(true)
+    setResult(null)
+
+    const prompt = `Sos un agente de Meta Ads para la marca "${brand?.name}". 
+El usuario quiere subir ${selectedFiles.length} archivo(s) a Meta Ads con estas instrucciones: "${instructions}"
+${selectedCampaign ? `Campaña destino: ${selectedCampaign}` : "Sin campaña especificada."}
+
+Archivos seleccionados: ${selectedFiles.map(f => f.name).join(", ")}
+
+Generá un plan de acción detallado en español con:
+1. Qué harías con cada archivo
+2. Configuración recomendada del ad set (objetivo, audiencia, presupuesto sugerido)
+3. Copy sugerido para cada anuncio
+4. Próximos pasos
+
+Respondé de forma clara y accionable.`
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }]
+        })
+      })
+      const data = await res.json()
+      setResult(data.content?.[0]?.text || "Sin respuesta")
+    } catch {
+      setResult("Error al conectar con Claude. Intentá de nuevo.")
+    }
+    setLaunching(false)
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div style={s.card}>
+        <div style={{ fontWeight: "800", fontSize: "15px", marginBottom: "16px" }}>🚀 Lanzamiento a Meta Ads</div>
+
+        {/* Selected files summary */}
+        {selectedFiles.length > 0 ? (
+          <div style={{ marginBottom: "16px", padding: "12px 14px", background: "rgba(71,255,200,0.06)", border: "1px solid rgba(71,255,200,0.2)", borderRadius: "6px" }}>
+            <div style={{ fontFamily: "monospace", fontSize: "10px", color: "#47ffc8", marginBottom: "8px" }}>
+              {selectedFiles.length} ARCHIVO{selectedFiles.length > 1 ? "S" : ""} SELECCIONADO{selectedFiles.length > 1 ? "S" : ""}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {selectedFiles.map(f => (
+                <span key={f.id} style={{ fontFamily: "monospace", fontSize: "11px", padding: "3px 8px", background: "rgba(71,255,200,0.1)", color: "#47ffc8", borderRadius: "3px" }}>
+                  {f.mimeType?.startsWith("video/") ? "🎬" : "🖼️"} {f.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{ marginBottom: "16px", padding: "12px 14px", background: "rgba(255,107,71,0.06)", border: "1px solid rgba(255,107,71,0.2)", borderRadius: "6px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>
+            ⚠ Seleccioná archivos en el paso anterior para continuar
+          </div>
+        )}
+
+        {/* Campaign selector */}
+        <div style={{ marginBottom: "12px" }}>
+          <div style={s.label}>CAMPAÑA DESTINO (opcional)</div>
+          <select
+            value={selectedCampaign}
+            onChange={e => setSelectedCampaign(e.target.value)}
+            style={{ ...s.input, appearance: "none" }}
+          >
+            <option value="">Sin campaña específica</option>
+            {activeCampaigns.map(c => (
+              <option key={c.name} value={c.name}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Instructions */}
+        <div style={{ marginBottom: "16px" }}>
+          <div style={s.label}>TUS INSTRUCCIONES</div>
+          <textarea
+            value={instructions}
+            onChange={e => setInstructions(e.target.value)}
+            placeholder='Ej: "Subí estos 3 videos como nuevos ads en la campaña de retargeting con objetivo conversiones, presupuesto $5000/día cada uno"'
+            style={{ ...s.input, minHeight: "100px", resize: "vertical" }}
+          />
+        </div>
+
+        <button
+          onClick={launch}
+          disabled={launching || selectedFiles.length === 0 || !instructions.trim()}
+          style={{
+            ...s.btn(),
+            opacity: (launching || selectedFiles.length === 0 || !instructions.trim()) ? 0.4 : 1,
+            width: "100%", justifyContent: "center", padding: "12px",
+          }}
+        >
+          {launching ? "⟳ Generando plan de lanzamiento…" : "🚀 Generar plan de lanzamiento"}
+        </button>
+      </div>
+
+      {/* Result */}
+      {result && (
+        <div style={s.card}>
+          <div style={s.label}>PLAN DE LANZAMIENTO</div>
+          <div style={{ fontSize: "13px", lineHeight: "1.8", color: "#c8c8e8", whiteSpace: "pre-wrap", marginTop: "8px" }}>
+            {result}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
+export default function AdsTab({ brand }) {
+  const [step, setStep] = useState("research")
+  const [selectedFiles, setSelectedFiles] = useState([])
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <div style={{ fontSize: "22px", fontWeight: "800", letterSpacing: "-0.02em" }}>🎯 Creación de Ads</div>
+          <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78", marginTop: "2px" }}>
+            {brand?.emoji} {brand?.name} · Flujo de 4 pasos
+          </div>
+        </div>
+      </div>
+
+      {/* Step navigator */}
+      <div style={{ display: "flex", gap: "0px", background: "#0e0e1a", border: "1px solid #1c1c2e", borderRadius: "8px", padding: "4px", overflow: "hidden" }}>
+        {STEPS.map((st, i) => {
+          const active = step === st.id
+          const stepIndex = STEPS.findIndex(s => s.id === step)
+          const done = i < stepIndex
+          return (
+            <button
+              key={st.id}
+              onClick={() => setStep(st.id)}
+              style={{
+                flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+                padding: "10px 8px", borderRadius: "6px", cursor: "pointer",
+                background: active ? "rgba(232,255,71,0.1)" : "transparent",
+                border: active ? "1px solid rgba(232,255,71,0.25)" : "1px solid transparent",
+                color: active ? "#e8ff47" : done ? "#47ffc8" : "#5a5a78",
+                fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: "13px", fontWeight: active ? "700" : "500",
+                transition: "all 0.15s",
+              }}
+            >
+              <span>{done ? "✓" : st.icon}</span>
+              <span style={{ display: window.innerWidth < 900 ? "none" : "block" }}>{st.label}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Step content */}
+      {step === "research" && <ResearchStep brand={brand} />}
+      {step === "roadmap" && <RoadmapStep brand={brand} />}
+      {step === "assets" && <AssetsStep brand={brand} onSelectFiles={setSelectedFiles} />}
+      {step === "launch" && <LaunchStep brand={brand} selectedFiles={selectedFiles} />}
+
+      {/* Step navigation */}
+      <div style={{ display: "flex", justifyContent: "space-between", paddingTop: "8px" }}>
+        <button
+          onClick={() => setStep(STEPS[Math.max(0, STEPS.findIndex(s => s.id === step) - 1)].id)}
+          disabled={step === STEPS[0].id}
+          style={{ ...s.btn("#5a5a78", "outline"), opacity: step === STEPS[0].id ? 0.3 : 1 }}
+        >
+          ← Paso anterior
+        </button>
+        <button
+          onClick={() => setStep(STEPS[Math.min(STEPS.length - 1, STEPS.findIndex(s => s.id === step) + 1)].id)}
+          disabled={step === STEPS[STEPS.length - 1].id}
+          style={{ ...s.btn(), opacity: step === STEPS[STEPS.length - 1].id ? 0.3 : 1 }}
+        >
+          Siguiente paso →
+        </button>
+      </div>
+    </div>
+  )
+}
