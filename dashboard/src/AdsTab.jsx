@@ -360,6 +360,8 @@ function RoadmapStep({ brand }) {
 function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady, tokenClientRef }) {
   const [files, setFiles] = useState([])
   const [sharedFolders, setSharedFolders] = useState([])
+  const [globalResults, setGlobalResults] = useState([])
+  const [searchingGlobal, setSearchingGlobal] = useState(false)
   const [folderStack, setFolderStack] = useState([{ id: "root", name: "Mi Drive" }])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState([])
@@ -391,6 +393,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
     setLoading(true)
     setError(null)
     setSearch("")
+    setGlobalResults([])
     try {
       if (folderId === "shared") {
         const res = await window.gapi.client.drive.files.list({
@@ -428,6 +431,27 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
     setLoading(false)
   }
 
+  const searchGlobal = async (e) => {
+    e.preventDefault();
+    if (!search.trim()) return;
+    setSearchingGlobal(true);
+    setGlobalResults([]);
+    setError(null);
+    try {
+      const cleanSearch = search.replace(/'/g, "\\'");
+      const res = await window.gapi.client.drive.files.list({
+        q: `name contains '${cleanSearch}' and trashed=false`,
+        fields: "files(id,name,mimeType,size,thumbnailLink,modifiedTime,parents)",
+        orderBy: "folder,name",
+        pageSize: 50,
+      });
+      setGlobalResults(res.result.files.filter(isMedia));
+    } catch (e) {
+      setError("Error en búsqueda global: " + (e.result?.error?.message || e.message));
+    }
+    setSearchingGlobal(false);
+  }
+
   const openFolder = (folder) => {
     setFolderStack(prev => [...prev, { id: folder.id, name: folder.name }])
     setFiles([])
@@ -445,6 +469,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
     setFolderStack([{ id: "root", name: "Mi Drive" }, { id: "shared", name: "Compartido conmigo" }])
     setFiles([])
     setSharedFolders([])
+    setGlobalResults([])
     setPathInput("")
     setShowPathInput(false)
     listFiles("shared")
@@ -591,21 +616,27 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
         )}
 
         {/* ── Search bar ── */}
-        <div style={{ marginBottom: "12px", position: "relative" }}>
-          <span style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", pointerEvents: "none" }}>🔍</span>
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar archivos en esta carpeta…"
-            style={{ ...s.input, paddingLeft: "32px", fontSize: "12px", padding: "8px 12px 8px 32px" }}
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#5a5a78", cursor: "pointer", fontSize: "13px" }}
-            >✕</button>
-          )}
-        </div>
+        <form onSubmit={searchGlobal} style={{ marginBottom: "12px", display: "flex", gap: "8px", alignItems: "center" }}>
+          <div style={{ position: "relative", flex: 1 }}>
+            <span style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", pointerEvents: "none" }}>🔍</span>
+            <input
+              value={search}
+              onChange={e => { setSearch(e.target.value); if (!e.target.value) setGlobalResults([]); }}
+              placeholder="Buscar archivos en esta carpeta (Enter para buscar en todo Drive)…"
+              style={{ ...s.input, paddingLeft: "32px", fontSize: "12px", padding: "8px 12px 8px 32px" }}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => { setSearch(""); setGlobalResults([]); }}
+                style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#5a5a78", cursor: "pointer", fontSize: "13px" }}
+              >✕</button>
+            )}
+          </div>
+          <button type="submit" disabled={!search || searchingGlobal} style={{ ...s.btn(), padding: "8px 16px", opacity: (!search || searchingGlobal) ? 0.5 : 1 }}>
+            {searchingGlobal ? "Buscando…" : "Buscar en Drive"}
+          </button>
+        </form>
 
         {/* Selection bar */}
         {selected.length > 0 && (
@@ -652,6 +683,60 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
                 <div style={{ ...s.label, marginTop: "24px", marginBottom: "12px", color: "#c47bff" }}>👥 COMPARTIDO CONMIGO</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
                   {filteredShared.map(file => renderFile(file))}
+                </div>
+              </>
+            )}
+
+            {globalResults.length > 0 && (
+              <>
+                <div style={{ ...s.label, marginTop: "24px", marginBottom: "12px", color: "#47ffc8" }}>RESULTADOS EN TODO DRIVE</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
+                  {globalResults.map(file => {
+                    const sel = selected.find(f => f.id === file.id);
+                    const folder = isFolder(file);
+                    return (
+                      <div
+                        key={file.id}
+                        onClick={() => folder ? navigateToId(file.id) : toggleSelect(file)}
+                        style={{
+                          background: sel ? "rgba(232,255,71,0.08)" : "#13131f",
+                          border: sel ? "1px solid rgba(232,255,71,0.4)" : "1px solid #1c1c2e",
+                          borderRadius: "6px", padding: "10px", cursor: "pointer",
+                          transition: "all 0.15s", position: "relative",
+                          display: "flex", flexDirection: "column"
+                        }}
+                      >
+                        {sel && (
+                          <div style={{ position: "absolute", top: "6px", right: "6px", width: "18px", height: "18px", borderRadius: "50%", background: "#e8ff47", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "800", color: "#000" }}>✓</div>
+                        )}
+                        <div style={{ height: "80px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "8px", borderRadius: "4px", overflow: "hidden", background: "#080810" }}>
+                          {file.thumbnailLink ? (
+                            <img src={file.thumbnailLink} alt={file.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            <span style={{ fontSize: "28px" }}>{folder ? "📂" : file.mimeType?.startsWith("video/") ? "🎬" : "🖼️"}</span>
+                          )}
+                        </div>
+                        <div style={{ fontFamily: "monospace", fontSize: "10px", color: folder ? "#e8ff47" : "#f0f0f8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {file.name}
+                        </div>
+                        <div style={{ flex: 1 }} />
+                        {!folder && file.size && (
+                          <div style={{ fontFamily: "monospace", fontSize: "9px", color: "#5a5a78", marginTop: "2px", marginBottom: "6px" }}>{fmt(parseInt(file.size))}</div>
+                        )}
+                        {file.parents?.[0] && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigateToId(file.parents[0]);
+                            }}
+                            style={{ ...s.btn("#47ffc8", "outline"), width: "100%", padding: "4px 8px", fontSize: "10px", marginTop: folder ? "8px" : "0", justifyContent: "center" }}
+                          >
+                            Ir a carpeta padre
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </>
             )}
