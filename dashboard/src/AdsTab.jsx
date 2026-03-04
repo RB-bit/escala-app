@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react"
 // ─── CONFIG ────────────────────────────────────────────────────────────────────
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
 console.log('CLIENT_ID:', GOOGLE_CLIENT_ID ? '[DEFINED ✓]' : '[UNDEFINED ✗ — check .env.local]')
-const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
 
 // ─── STEPS ─────────────────────────────────────────────────────────────────────
@@ -360,6 +360,7 @@ function RoadmapStep({ brand }) {
 function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady, tokenClientRef }) {
   const [files, setFiles] = useState([])
   const [sharedFolders, setSharedFolders] = useState([])
+  const [sharedDrives, setSharedDrives] = useState([])
   const [globalResults, setGlobalResults] = useState([])
   const [searchingGlobal, setSearchingGlobal] = useState(false)
   const [folderStack, setFolderStack] = useState([{ id: "root", name: "Mi Drive" }])
@@ -401,6 +402,9 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
           fields: "files(id,name,mimeType,size,thumbnailLink,modifiedTime)",
           orderBy: "folder,name",
           pageSize: 50,
+          includeItemsFromAllDrives: true,
+          supportsAllDrives: true,
+          corpora: "allDrives"
         })
         setFiles(res.result.files)
         setSharedFolders([])
@@ -410,6 +414,9 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
           fields: "files(id,name,mimeType,size,thumbnailLink,modifiedTime)",
           orderBy: "folder,name",
           pageSize: 50,
+          includeItemsFromAllDrives: true,
+          supportsAllDrives: true,
+          corpora: "allDrives"
         })
         setFiles(res.result.files.filter(isMedia))
 
@@ -419,10 +426,20 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
             fields: "files(id,name,mimeType,size,thumbnailLink,modifiedTime)",
             orderBy: "folder,name",
             pageSize: 50,
+            includeItemsFromAllDrives: true,
+            supportsAllDrives: true,
+            corpora: "allDrives"
           })
           setSharedFolders(resShared.result.files)
+
+          const resDrives = await window.gapi.client.drive.drives.list({
+            pageSize: 20,
+            fields: "drives(id,name)"
+          })
+          setSharedDrives(resDrives.result.drives)
         } else {
           setSharedFolders([])
+          setSharedDrives([])
         }
       }
     } catch (e) {
@@ -444,6 +461,8 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
         fields: "files(id,name,mimeType,size,thumbnailLink,modifiedTime,parents)",
         orderBy: "folder,name",
         pageSize: 50,
+        includeItemsFromAllDrives: true,
+        supportsAllDrives: true
       });
       setGlobalResults(res.result.files.filter(isMedia));
     } catch (e) {
@@ -469,6 +488,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
     setFolderStack([{ id: "root", name: "Mi Drive" }, { id: "shared", name: "Compartido conmigo" }])
     setFiles([])
     setSharedFolders([])
+    setSharedDrives([])
     setGlobalResults([])
     setPathInput("")
     setShowPathInput(false)
@@ -506,6 +526,9 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
   const filteredShared = search.trim()
     ? sharedFolders.filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
     : sharedFolders
+  const filteredSharedDrives = search.trim()
+    ? sharedDrives.filter(d => d.name.toLowerCase().includes(search.toLowerCase()))
+    : sharedDrives
 
   const renderFile = (file) => {
     const sel = selected.find(f => f.id === file.id)
@@ -655,7 +678,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
         {/* ── search result label ── */}
         {search && !loading && (
           <div style={{ marginBottom: "8px", fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>
-            {filteredFiles.length + filteredShared.length} resultado{(filteredFiles.length + filteredShared.length) !== 1 ? "s" : ""} para "{search}"
+            {filteredFiles.length + filteredShared.length + filteredSharedDrives.length} resultado{(filteredFiles.length + filteredShared.length + filteredSharedDrives.length) !== 1 ? "s" : ""} para "{search}"
           </div>
         )}
 
@@ -668,7 +691,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
           </div>
         ) : (
           <>
-            {filteredFiles.length === 0 && filteredShared.length === 0 && (
+            {filteredFiles.length === 0 && filteredShared.length === 0 && filteredSharedDrives.length === 0 && (
               <div style={{ textAlign: "center", padding: "32px", fontFamily: "monospace", fontSize: "12px", color: "#5a5a78" }}>
                 {search ? `⚠ Sin resultados para "${search}"` : "📂 Carpeta vacía o sin archivos de imagen/video"}
               </div>
@@ -683,6 +706,15 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
                 <div style={{ ...s.label, marginTop: "24px", marginBottom: "12px", color: "#c47bff" }}>👥 COMPARTIDO CONMIGO</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
                   {filteredShared.map(file => renderFile(file))}
+                </div>
+              </>
+            )}
+
+            {currentFolder.id === "root" && filteredSharedDrives.length > 0 && (
+              <>
+                <div style={{ ...s.label, marginTop: "24px", marginBottom: "12px", color: "#47ffc8" }}>🏢 DRIVES COMPARTIDOS</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
+                  {filteredSharedDrives.map(drive => renderFile({ ...drive, mimeType: "application/vnd.google-apps.folder" }))}
                 </div>
               </>
             )}
