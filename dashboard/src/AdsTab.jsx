@@ -359,6 +359,7 @@ function RoadmapStep({ brand }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady, tokenClientRef }) {
   const [files, setFiles] = useState([])
+  const [sharedFolders, setSharedFolders] = useState([])
   const [folderStack, setFolderStack] = useState([{ id: "root", name: "Mi Drive" }])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState([])
@@ -391,13 +392,36 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
     setError(null)
     setSearch("")
     try {
-      const res = await window.gapi.client.drive.files.list({
-        q: `'${folderId}' in parents and trashed=false`,
-        fields: "files(id,name,mimeType,size,thumbnailLink,modifiedTime)",
-        orderBy: "folder,name",
-        pageSize: 50,
-      })
-      setFiles(res.result.files.filter(isMedia))
+      if (folderId === "shared") {
+        const res = await window.gapi.client.drive.files.list({
+          q: `sharedWithMe=true and trashed=false and mimeType='application/vnd.google-apps.folder'`,
+          fields: "files(id,name,mimeType,size,thumbnailLink,modifiedTime)",
+          orderBy: "folder,name",
+          pageSize: 50,
+        })
+        setFiles(res.result.files)
+        setSharedFolders([])
+      } else {
+        const res = await window.gapi.client.drive.files.list({
+          q: `'${folderId}' in parents and trashed=false`,
+          fields: "files(id,name,mimeType,size,thumbnailLink,modifiedTime)",
+          orderBy: "folder,name",
+          pageSize: 50,
+        })
+        setFiles(res.result.files.filter(isMedia))
+
+        if (folderId === "root") {
+          const resShared = await window.gapi.client.drive.files.list({
+            q: `sharedWithMe=true and trashed=false and mimeType='application/vnd.google-apps.folder'`,
+            fields: "files(id,name,mimeType,size,thumbnailLink,modifiedTime)",
+            orderBy: "folder,name",
+            pageSize: 50,
+          })
+          setSharedFolders(resShared.result.files)
+        } else {
+          setSharedFolders([])
+        }
+      }
     } catch (e) {
       setError("Error al listar archivos: " + (e.result?.error?.message || e.message))
     }
@@ -415,6 +439,15 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
     const newStack = folderStack.slice(0, -1)
     setFolderStack(newStack)
     listFiles(newStack[newStack.length - 1].id)
+  }
+
+  const navigateToShared = () => {
+    setFolderStack([{ id: "root", name: "Mi Drive" }, { id: "shared", name: "Compartido conmigo" }])
+    setFiles([])
+    setSharedFolders([])
+    setPathInput("")
+    setShowPathInput(false)
+    listFiles("shared")
   }
 
   const navigateToId = (rawInput) => {
@@ -445,6 +478,43 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
   const filteredFiles = search.trim()
     ? files.filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
     : files
+  const filteredShared = search.trim()
+    ? sharedFolders.filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
+    : sharedFolders
+
+  const renderFile = (file) => {
+    const sel = selected.find(f => f.id === file.id)
+    const folder = isFolder(file)
+    return (
+      <div
+        key={file.id}
+        onClick={() => folder ? openFolder(file) : toggleSelect(file)}
+        style={{
+          background: sel ? "rgba(232,255,71,0.08)" : "#13131f",
+          border: sel ? "1px solid rgba(232,255,71,0.4)" : "1px solid #1c1c2e",
+          borderRadius: "6px", padding: "10px", cursor: "pointer",
+          transition: "all 0.15s", position: "relative",
+        }}
+      >
+        {sel && (
+          <div style={{ position: "absolute", top: "6px", right: "6px", width: "18px", height: "18px", borderRadius: "50%", background: "#e8ff47", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "800", color: "#000" }}>✓</div>
+        )}
+        <div style={{ height: "80px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "8px", borderRadius: "4px", overflow: "hidden", background: "#080810" }}>
+          {file.thumbnailLink ? (
+            <img src={file.thumbnailLink} alt={file.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <span style={{ fontSize: "28px" }}>{folder ? "📂" : file.mimeType?.startsWith("video/") ? "🎬" : "🖼️"}</span>
+          )}
+        </div>
+        <div style={{ fontFamily: "monospace", fontSize: "10px", color: folder ? "#e8ff47" : "#f0f0f8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {file.name}
+        </div>
+        {!folder && file.size && (
+          <div style={{ fontFamily: "monospace", fontSize: "9px", color: "#5a5a78", marginTop: "2px" }}>{fmt(parseInt(file.size))}</div>
+        )}
+      </div>
+    )
+  }
 
   if (!signedIn) return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -499,6 +569,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
               <button onClick={goBack} style={s.btn("#5a5a78", "outline")}>← Volver</button>
             )}
             <button onClick={() => listFiles(currentFolder.id)} style={s.btn("#5a5a78", "outline")}>↻</button>
+            <button onClick={navigateToShared} style={s.btn("#c47bff", "outline")}>👥 Compartido conmigo</button>
             <button onClick={() => setShowPathInput(p => !p)} style={s.btn("#5a5a78", "outline")} title="Ir a carpeta por URL o ID">🔗 Ir a carpeta</button>
           </div>
         </div>
@@ -553,7 +624,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
         {/* ── search result label ── */}
         {search && !loading && (
           <div style={{ marginBottom: "8px", fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>
-            {filteredFiles.length} resultado{filteredFiles.length !== 1 ? "s" : ""} para "{search}"
+            {filteredFiles.length + filteredShared.length} resultado{(filteredFiles.length + filteredShared.length) !== 1 ? "s" : ""} para "{search}"
           </div>
         )}
 
@@ -564,46 +635,27 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
               <div key={i} style={{ height: "120px", background: "#13131f", borderRadius: "6px", animation: "pulse 1.5s ease-in-out infinite" }} />
             ))}
           </div>
-        ) : filteredFiles.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "32px", fontFamily: "monospace", fontSize: "12px", color: "#5a5a78" }}>
-            {search ? `⚠ Sin resultados para "${search}"` : "📂 Carpeta vacía o sin archivos de imagen/video"}
-          </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
-            {filteredFiles.map(file => {
-              const sel = selected.find(f => f.id === file.id)
-              const folder = isFolder(file)
-              return (
-                <div
-                  key={file.id}
-                  onClick={() => folder ? openFolder(file) : toggleSelect(file)}
-                  style={{
-                    background: sel ? "rgba(232,255,71,0.08)" : "#13131f",
-                    border: sel ? "1px solid rgba(232,255,71,0.4)" : "1px solid #1c1c2e",
-                    borderRadius: "6px", padding: "10px", cursor: "pointer",
-                    transition: "all 0.15s", position: "relative",
-                  }}
-                >
-                  {sel && (
-                    <div style={{ position: "absolute", top: "6px", right: "6px", width: "18px", height: "18px", borderRadius: "50%", background: "#e8ff47", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "800", color: "#000" }}>✓</div>
-                  )}
-                  <div style={{ height: "80px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "8px", borderRadius: "4px", overflow: "hidden", background: "#080810" }}>
-                    {file.thumbnailLink ? (
-                      <img src={file.thumbnailLink} alt={file.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    ) : (
-                      <span style={{ fontSize: "28px" }}>{folder ? "📂" : file.mimeType?.startsWith("video/") ? "🎬" : "🖼️"}</span>
-                    )}
-                  </div>
-                  <div style={{ fontFamily: "monospace", fontSize: "10px", color: folder ? "#e8ff47" : "#f0f0f8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {file.name}
-                  </div>
-                  {!folder && file.size && (
-                    <div style={{ fontFamily: "monospace", fontSize: "9px", color: "#5a5a78", marginTop: "2px" }}>{fmt(parseInt(file.size))}</div>
-                  )}
+          <>
+            {filteredFiles.length === 0 && filteredShared.length === 0 && (
+              <div style={{ textAlign: "center", padding: "32px", fontFamily: "monospace", fontSize: "12px", color: "#5a5a78" }}>
+                {search ? `⚠ Sin resultados para "${search}"` : "📂 Carpeta vacía o sin archivos de imagen/video"}
+              </div>
+            )}
+            {filteredFiles.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
+                {filteredFiles.map(file => renderFile(file))}
+              </div>
+            )}
+            {currentFolder.id === "root" && filteredShared.length > 0 && (
+              <>
+                <div style={{ ...s.label, marginTop: "24px", marginBottom: "12px", color: "#c47bff" }}>👥 COMPARTIDO CONMIGO</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
+                  {filteredShared.map(file => renderFile(file))}
                 </div>
-              )
-            })}
-          </div>
+              </>
+            )}
+          </>
         )}
       </div>
     </div>
