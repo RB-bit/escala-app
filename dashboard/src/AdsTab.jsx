@@ -5,6 +5,8 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
 console.log('CLIENT_ID:', GOOGLE_CLIENT_ID ? '[DEFINED ✓]' : '[UNDEFINED ✗ — check .env.local]')
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
+const META_TOKEN = import.meta.env.VITE_META_ACCESS_TOKEN
+const META_GRAPH = "https://graph.facebook.com/v21.0"
 
 // ─── STEPS ─────────────────────────────────────────────────────────────────────
 const STEPS = [
@@ -370,6 +372,16 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
   const [search, setSearch] = useState("")
   const [pathInput, setPathInput] = useState("")
   const [showPathInput, setShowPathInput] = useState(false)
+  const [source, setSource] = useState("drive")
+  const [metaAssets, setMetaAssets] = useState([])
+  const [metaLoading, setMetaLoading] = useState(false)
+  const [metaError, setMetaError] = useState(null)
+  const [metaFilter, setMetaFilter] = useState("all")
+  const [metaSearch, setMetaSearch] = useState("")
+  const [metaDateFilter, setMetaDateFilter] = useState("all")
+  const [metaImageCursor, setMetaImageCursor] = useState(null)
+  const [metaVideoCursor, setMetaVideoCursor] = useState(null)
+  const [metaHasMore, setMetaHasMore] = useState(false)
 
   const signIn = () => {
     if (!scriptsReady || !tokenClientRef.current) {
@@ -519,6 +531,66 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
     })
   }
 
+  const fetchMetaAssets = async ({ append = false, imgCursor = null, vidCursor = null } = {}) => {
+    const accountId = brand?.metaAccounts?.[0]
+    if (!accountId) { setMetaError("Esta marca no tiene cuenta Meta configurada."); return }
+    if (!META_TOKEN) { setMetaError("VITE_META_ACCESS_TOKEN no configurado en .env.local"); return }
+    setMetaLoading(true)
+    setMetaError(null)
+    try {
+      const imgParams = new URLSearchParams({
+        fields: "name,url_128,width,height,updated_time,hash",
+        limit: "50",
+        access_token: META_TOKEN,
+        ...(imgCursor ? { after: imgCursor } : {}),
+      })
+      const vidParams = new URLSearchParams({
+        fields: "title,picture,source,length,updated_time",
+        limit: "50",
+        access_token: META_TOKEN,
+        ...(vidCursor ? { after: vidCursor } : {}),
+      })
+      const [imgRes, vidRes] = await Promise.all([
+        fetch(`${META_GRAPH}/${accountId}/adimages?${imgParams}`).then(r => r.json()),
+        fetch(`${META_GRAPH}/${accountId}/advideos?${vidParams}`).then(r => r.json()),
+      ])
+      if (imgRes.error) throw new Error(imgRes.error.message)
+      if (vidRes.error) throw new Error(vidRes.error.message)
+      const images = (imgRes.data || []).map(img => ({
+        id: img.hash, name: img.name, thumbnailLink: img.url_128,
+        mimeType: "image/jpeg", source: "meta",
+        width: img.width, height: img.height, updatedTime: img.updated_time,
+      }))
+      const videos = (vidRes.data || []).map(vid => ({
+        id: vid.id, name: vid.title || `Video ${vid.id}`, thumbnailLink: vid.picture,
+        mimeType: "video/mp4", source: "meta",
+        videoUrl: vid.source,
+        durationSecs: vid.length, updatedTime: vid.updated_time,
+      }))
+      const combined = [...images, ...videos].sort((a, b) => new Date(b.updatedTime) - new Date(a.updatedTime))
+      setMetaAssets(prev => append ? [...prev, ...combined] : combined)
+      setMetaImageCursor(imgRes.paging?.cursors?.after || null)
+      setMetaVideoCursor(vidRes.paging?.cursors?.after || null)
+      setMetaHasMore(!!(imgRes.paging?.next || vidRes.paging?.next))
+    } catch (e) {
+      setMetaError("Error al cargar biblioteca Meta: " + e.message)
+    }
+    setMetaLoading(false)
+  }
+
+  const filteredMetaAssets = metaAssets.filter(a => {
+    const typeOk = metaFilter === "all"
+      || (metaFilter === "image" && a.mimeType.startsWith("image/"))
+      || (metaFilter === "video" && a.mimeType.startsWith("video/"))
+    const nameOk = !metaSearch.trim() || a.name.toLowerCase().includes(metaSearch.toLowerCase())
+    const dateOk = metaDateFilter === "all" || (() => {
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - parseInt(metaDateFilter))
+      return new Date(a.updatedTime) >= cutoff
+    })()
+    return typeOk && nameOk && dateOk
+  })
+
   const currentFolder = folderStack[folderStack.length - 1]
   const filteredFiles = search.trim()
     ? files.filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
@@ -564,217 +636,384 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
     )
   }
 
-  if (!signedIn) return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      <div style={{ ...s.card, textAlign: "center", padding: "48px 24px" }}>
-        <div style={{ fontSize: "40px", marginBottom: "16px" }}>📁</div>
-        <div style={{ fontWeight: "800", fontSize: "18px", marginBottom: "8px" }}>Conectá tu Google Drive</div>
-        <div style={{ fontFamily: "monospace", fontSize: "12px", color: "#5a5a78", marginBottom: "24px", maxWidth: "360px", margin: "0 auto 24px" }}>
-          Autorizá el acceso para explorar tus carpetas y seleccionar los assets que querés subir a Meta Ads.
-        </div>
-        {error && <div style={{ marginBottom: "16px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>⚠ {error}</div>}
-        <button
-          onClick={signIn}
-          disabled={!scriptsReady}
-          style={{ ...s.btn(), margin: "0 auto", padding: "12px 28px", fontSize: "14px", opacity: scriptsReady ? 1 : 0.5, cursor: scriptsReady ? "pointer" : "wait" }}
-        >
-          {scriptsReady ? "Conectar Google Drive" : "⟳ Cargando Google..."}
-        </button>
-      </div>
-    </div>
-  )
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      {/* ── Breadcrumb ── */}
-      <div style={s.card}>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
-          <span style={{ fontSize: "14px" }}>📂</span>
-          {folderStack.map((f, i) => (
-            <span key={f.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              {i > 0 && <span style={{ color: "#3a3a55", fontSize: "12px" }}>/</span>}
-              <span
-                onClick={() => {
-                  if (i < folderStack.length - 1) {
-                    const ns = folderStack.slice(0, i + 1)
-                    setFolderStack(ns)
-                    listFiles(f.id)
-                  }
-                }}
-                style={{
-                  fontFamily: "monospace", fontSize: "12px",
-                  color: i === folderStack.length - 1 ? "#f0f0f8" : "#5a5a78",
-                  cursor: i < folderStack.length - 1 ? "pointer" : "default",
-                  padding: "2px 6px", borderRadius: "4px",
-                  background: i === folderStack.length - 1 ? "rgba(255,255,255,0.05)" : "transparent",
-                  textDecoration: i < folderStack.length - 1 ? "underline" : "none",
-                }}
-              >{f.name}</span>
-            </span>
-          ))}
-          <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
-            {folderStack.length > 1 && (
-              <button onClick={goBack} style={s.btn("#5a5a78", "outline")}>← Volver</button>
-            )}
-            <button onClick={() => listFiles(currentFolder.id)} style={s.btn("#5a5a78", "outline")}>↻</button>
-            <button onClick={navigateToShared} style={s.btn("#c47bff", "outline")}>👥 Compartido conmigo</button>
-            <button onClick={() => setShowPathInput(p => !p)} style={s.btn("#5a5a78", "outline")} title="Ir a carpeta por URL o ID">🔗 Ir a carpeta</button>
-          </div>
-        </div>
 
-        {/* ── Direct path input ── */}
-        {showPathInput && (
-          <div style={{ marginBottom: "12px", display: "flex", gap: "8px", alignItems: "center" }}>
-            <input
-              value={pathInput}
-              onChange={e => setPathInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && navigateToId(pathInput)}
-              placeholder="Pegá una URL de Drive o un Folder ID…"
-              style={{ ...s.input, flex: 1, fontSize: "12px", padding: "8px 12px" }}
-              autoFocus
-            />
-            <button onClick={() => navigateToId(pathInput)} style={s.btn()}>Ir</button>
-            <button onClick={() => { setShowPathInput(false); setPathInput("") }} style={s.btn("#5a5a78", "outline")}>✕</button>
-          </div>
-        )}
-
-        {/* ── Search bar ── */}
-        <form onSubmit={searchGlobal} style={{ marginBottom: "12px", display: "flex", gap: "8px", alignItems: "center" }}>
-          <div style={{ position: "relative", flex: 1 }}>
-            <span style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", pointerEvents: "none" }}>🔍</span>
-            <input
-              value={search}
-              onChange={e => { setSearch(e.target.value); if (!e.target.value) setGlobalResults([]); }}
-              placeholder="Buscar archivos en esta carpeta (Enter para buscar en todo Drive)…"
-              style={{ ...s.input, paddingLeft: "32px", fontSize: "12px", padding: "8px 12px 8px 32px" }}
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => { setSearch(""); setGlobalResults([]); }}
-                style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#5a5a78", cursor: "pointer", fontSize: "13px" }}
-              >✕</button>
-            )}
-          </div>
-          <button type="submit" disabled={!search || searchingGlobal} style={{ ...s.btn(), padding: "8px 16px", opacity: (!search || searchingGlobal) ? 0.5 : 1 }}>
-            {searchingGlobal ? "Buscando…" : "Buscar en Drive"}
+      {/* ── Source tab switcher ── */}
+      <div style={{ display: "flex", gap: "4px", background: "#0e0e1a", border: "1px solid #1c1c2e", borderRadius: "8px", padding: "4px" }}>
+        {[
+          { id: "drive", icon: "📁", label: "Google Drive" },
+          { id: "meta", icon: "🖼️", label: `Biblioteca Meta · ${brand?.name || ""}` },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => {
+              setSource(tab.id)
+              if (tab.id === "meta" && metaAssets.length === 0 && !metaLoading) fetchMetaAssets()
+            }}
+            style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+              padding: "10px 8px", borderRadius: "6px", cursor: "pointer",
+              background: source === tab.id ? "rgba(232,255,71,0.1)" : "transparent",
+              border: source === tab.id ? "1px solid rgba(232,255,71,0.25)" : "1px solid transparent",
+              color: source === tab.id ? "#e8ff47" : "#5a5a78",
+              fontFamily: "'Bricolage Grotesque', sans-serif", fontSize: "13px", fontWeight: source === tab.id ? "700" : "500",
+              transition: "all 0.15s",
+            }}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
           </button>
-        </form>
+        ))}
+      </div>
 
-        {/* Selection bar */}
-        {selected.length > 0 && (
-          <div style={{ marginBottom: "12px", padding: "10px 14px", background: "rgba(232,255,71,0.08)", border: "1px solid rgba(232,255,71,0.2)", borderRadius: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#e8ff47" }}>
-              {selected.length} archivo{selected.length > 1 ? "s" : ""} seleccionado{selected.length > 1 ? "s" : ""}
-            </span>
-            <button onClick={() => { setSelected([]); onSelectFiles?.([]) }} style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78", background: "none", border: "none", cursor: "pointer" }}>
-              Limpiar selección
-            </button>
+      {/* ── Unified selection bar ── */}
+      {selected.length > 0 && (
+        <div style={{ padding: "10px 14px", background: "rgba(232,255,71,0.08)", border: "1px solid rgba(232,255,71,0.2)", borderRadius: "6px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#e8ff47" }}>
+            {selected.length} archivo{selected.length > 1 ? "s" : ""} seleccionado{selected.length > 1 ? "s" : ""}
+            {selected.some(f => f.source !== "meta") && selected.some(f => f.source === "meta") && (
+              <span style={{ color: "#5a5a78" }}>{" "}· {selected.filter(f => f.source !== "meta").length} Drive · {selected.filter(f => f.source === "meta").length} Meta</span>
+            )}
+          </span>
+          <button onClick={() => { setSelected([]); onSelectFiles?.([]) }} style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78", background: "none", border: "none", cursor: "pointer" }}>
+            Limpiar selección
+          </button>
+        </div>
+      )}
+
+      {/* ── Drive: auth gate ── */}
+      {source === "drive" && !signedIn && (
+        <div style={{ ...s.card, textAlign: "center", padding: "48px 24px" }}>
+          <div style={{ fontSize: "40px", marginBottom: "16px" }}>📁</div>
+          <div style={{ fontWeight: "800", fontSize: "18px", marginBottom: "8px" }}>Conectá tu Google Drive</div>
+          <div style={{ fontFamily: "monospace", fontSize: "12px", color: "#5a5a78", marginBottom: "24px", maxWidth: "360px", margin: "0 auto 24px" }}>
+            Autorizá el acceso para explorar tus carpetas y seleccionar los assets que querés subir a Meta Ads.
           </div>
-        )}
+          {error && <div style={{ marginBottom: "16px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>⚠ {error}</div>}
+          <button
+            onClick={signIn}
+            disabled={!scriptsReady}
+            style={{ ...s.btn(), margin: "0 auto", padding: "12px 28px", fontSize: "14px", opacity: scriptsReady ? 1 : 0.5, cursor: scriptsReady ? "pointer" : "wait" }}
+          >
+            {scriptsReady ? "Conectar Google Drive" : "⟳ Cargando Google..."}
+          </button>
+        </div>
+      )}
 
-        {error && <div style={{ marginBottom: "12px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>⚠ {error}</div>}
-
-        {/* ── search result label ── */}
-        {search && !loading && (
-          <div style={{ marginBottom: "8px", fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>
-            {filteredFiles.length + filteredShared.length + filteredSharedDrives.length} resultado{(filteredFiles.length + filteredShared.length + filteredSharedDrives.length) !== 1 ? "s" : ""} para "{search}"
-          </div>
-        )}
-
-        {/* ── File grid ── */}
-        {loading ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
-            {[0, 1, 2, 3, 4, 5, 6, 7].map(i => (
-              <div key={i} style={{ height: "120px", background: "#13131f", borderRadius: "6px", animation: "pulse 1.5s ease-in-out infinite" }} />
+      {/* ── Drive: browser ── */}
+      {source === "drive" && signedIn && (
+        <div style={s.card}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "14px" }}>📂</span>
+            {folderStack.map((f, i) => (
+              <span key={f.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                {i > 0 && <span style={{ color: "#3a3a55", fontSize: "12px" }}>/</span>}
+                <span
+                  onClick={() => {
+                    if (i < folderStack.length - 1) {
+                      const ns = folderStack.slice(0, i + 1)
+                      setFolderStack(ns)
+                      listFiles(f.id)
+                    }
+                  }}
+                  style={{
+                    fontFamily: "monospace", fontSize: "12px",
+                    color: i === folderStack.length - 1 ? "#f0f0f8" : "#5a5a78",
+                    cursor: i < folderStack.length - 1 ? "pointer" : "default",
+                    padding: "2px 6px", borderRadius: "4px",
+                    background: i === folderStack.length - 1 ? "rgba(255,255,255,0.05)" : "transparent",
+                    textDecoration: i < folderStack.length - 1 ? "underline" : "none",
+                  }}
+                >{f.name}</span>
+              </span>
             ))}
+            <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
+              {folderStack.length > 1 && (
+                <button onClick={goBack} style={s.btn("#5a5a78", "outline")}>← Volver</button>
+              )}
+              <button onClick={() => listFiles(currentFolder.id)} style={s.btn("#5a5a78", "outline")}>↻</button>
+              <button onClick={navigateToShared} style={s.btn("#c47bff", "outline")}>👥 Compartido conmigo</button>
+              <button onClick={() => setShowPathInput(p => !p)} style={s.btn("#5a5a78", "outline")} title="Ir a carpeta por URL o ID">🔗 Ir a carpeta</button>
+            </div>
           </div>
-        ) : (
-          <>
-            {filteredFiles.length === 0 && filteredShared.length === 0 && filteredSharedDrives.length === 0 && (
-              <div style={{ textAlign: "center", padding: "32px", fontFamily: "monospace", fontSize: "12px", color: "#5a5a78" }}>
-                {search ? `⚠ Sin resultados para "${search}"` : "📂 Carpeta vacía o sin archivos de imagen/video"}
-              </div>
-            )}
-            {filteredFiles.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
-                {filteredFiles.map(file => renderFile(file))}
-              </div>
-            )}
-            {currentFolder.id === "root" && filteredShared.length > 0 && (
-              <>
-                <div style={{ ...s.label, marginTop: "24px", marginBottom: "12px", color: "#c47bff" }}>👥 COMPARTIDO CONMIGO</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
-                  {filteredShared.map(file => renderFile(file))}
-                </div>
-              </>
-            )}
 
-            {currentFolder.id === "root" && filteredSharedDrives.length > 0 && (
-              <>
-                <div style={{ ...s.label, marginTop: "24px", marginBottom: "12px", color: "#47ffc8" }}>🏢 DRIVES COMPARTIDOS</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
-                  {filteredSharedDrives.map(drive => renderFile({ ...drive, mimeType: "application/vnd.google-apps.folder" }))}
-                </div>
-              </>
-            )}
+          {/* ── Direct path input ── */}
+          {showPathInput && (
+            <div style={{ marginBottom: "12px", display: "flex", gap: "8px", alignItems: "center" }}>
+              <input
+                value={pathInput}
+                onChange={e => setPathInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && navigateToId(pathInput)}
+                placeholder="Pegá una URL de Drive o un Folder ID…"
+                style={{ ...s.input, flex: 1, fontSize: "12px", padding: "8px 12px" }}
+                autoFocus
+              />
+              <button onClick={() => navigateToId(pathInput)} style={s.btn()}>Ir</button>
+              <button onClick={() => { setShowPathInput(false); setPathInput("") }} style={s.btn("#5a5a78", "outline")}>✕</button>
+            </div>
+          )}
 
-            {globalResults.length > 0 && (
-              <>
-                <div style={{ ...s.label, marginTop: "24px", marginBottom: "12px", color: "#47ffc8" }}>RESULTADOS EN TODO DRIVE</div>
+          {/* ── Search bar ── */}
+          <form onSubmit={searchGlobal} style={{ marginBottom: "12px", display: "flex", gap: "8px", alignItems: "center" }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <span style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", pointerEvents: "none" }}>🔍</span>
+              <input
+                value={search}
+                onChange={e => { setSearch(e.target.value); if (!e.target.value) setGlobalResults([]); }}
+                placeholder="Buscar archivos en esta carpeta (Enter para buscar en todo Drive)…"
+                style={{ ...s.input, paddingLeft: "32px", fontSize: "12px", padding: "8px 12px 8px 32px" }}
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => { setSearch(""); setGlobalResults([]); }}
+                  style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#5a5a78", cursor: "pointer", fontSize: "13px" }}
+                >✕</button>
+              )}
+            </div>
+            <button type="submit" disabled={!search || searchingGlobal} style={{ ...s.btn(), padding: "8px 16px", opacity: (!search || searchingGlobal) ? 0.5 : 1 }}>
+              {searchingGlobal ? "Buscando…" : "Buscar en Drive"}
+            </button>
+          </form>
+
+
+          {error && <div style={{ marginBottom: "12px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>⚠ {error}</div>}
+
+          {/* ── search result label ── */}
+          {search && !loading && (
+            <div style={{ marginBottom: "8px", fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>
+              {filteredFiles.length + filteredShared.length + filteredSharedDrives.length} resultado{(filteredFiles.length + filteredShared.length + filteredSharedDrives.length) !== 1 ? "s" : ""} para "{search}"
+            </div>
+          )}
+
+          {/* ── File grid ── */}
+          {loading ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
+              {[0, 1, 2, 3, 4, 5, 6, 7].map(i => (
+                <div key={i} style={{ height: "120px", background: "#13131f", borderRadius: "6px", animation: "pulse 1.5s ease-in-out infinite" }} />
+              ))}
+            </div>
+          ) : (
+            <>
+              {filteredFiles.length === 0 && filteredShared.length === 0 && filteredSharedDrives.length === 0 && (
+                <div style={{ textAlign: "center", padding: "32px", fontFamily: "monospace", fontSize: "12px", color: "#5a5a78" }}>
+                  {search ? `⚠ Sin resultados para "${search}"` : "📂 Carpeta vacía o sin archivos de imagen/video"}
+                </div>
+              )}
+              {filteredFiles.length > 0 && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
-                  {globalResults.map(file => {
-                    const sel = selected.find(f => f.id === file.id);
-                    const folder = isFolder(file);
+                  {filteredFiles.map(file => renderFile(file))}
+                </div>
+              )}
+              {currentFolder.id === "root" && filteredShared.length > 0 && (
+                <>
+                  <div style={{ ...s.label, marginTop: "24px", marginBottom: "12px", color: "#c47bff" }}>👥 COMPARTIDO CONMIGO</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
+                    {filteredShared.map(file => renderFile(file))}
+                  </div>
+                </>
+              )}
+
+              {currentFolder.id === "root" && filteredSharedDrives.length > 0 && (
+                <>
+                  <div style={{ ...s.label, marginTop: "24px", marginBottom: "12px", color: "#47ffc8" }}>🏢 DRIVES COMPARTIDOS</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
+                    {filteredSharedDrives.map(drive => renderFile({ ...drive, mimeType: "application/vnd.google-apps.folder" }))}
+                  </div>
+                </>
+              )}
+
+              {globalResults.length > 0 && (
+                <>
+                  <div style={{ ...s.label, marginTop: "24px", marginBottom: "12px", color: "#47ffc8" }}>RESULTADOS EN TODO DRIVE</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
+                    {globalResults.map(file => {
+                      const sel = selected.find(f => f.id === file.id);
+                      const folder = isFolder(file);
+                      return (
+                        <div
+                          key={file.id}
+                          onClick={() => folder ? navigateToId(file.id) : toggleSelect(file)}
+                          style={{
+                            background: sel ? "rgba(232,255,71,0.08)" : "#13131f",
+                            border: sel ? "1px solid rgba(232,255,71,0.4)" : "1px solid #1c1c2e",
+                            borderRadius: "6px", padding: "10px", cursor: "pointer",
+                            transition: "all 0.15s", position: "relative",
+                            display: "flex", flexDirection: "column"
+                          }}
+                        >
+                          {sel && (
+                            <div style={{ position: "absolute", top: "6px", right: "6px", width: "18px", height: "18px", borderRadius: "50%", background: "#e8ff47", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "800", color: "#000" }}>✓</div>
+                          )}
+                          <div style={{ height: "80px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "8px", borderRadius: "4px", overflow: "hidden", background: "#080810" }}>
+                            {file.thumbnailLink ? (
+                              <img src={file.thumbnailLink} alt={file.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : (
+                              <span style={{ fontSize: "28px" }}>{folder ? "📂" : file.mimeType?.startsWith("video/") ? "🎬" : "🖼️"}</span>
+                            )}
+                          </div>
+                          <div style={{ fontFamily: "monospace", fontSize: "10px", color: folder ? "#e8ff47" : "#f0f0f8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {file.name}
+                          </div>
+                          <div style={{ flex: 1 }} />
+                          {!folder && file.size && (
+                            <div style={{ fontFamily: "monospace", fontSize: "9px", color: "#5a5a78", marginTop: "2px", marginBottom: "6px" }}>{fmt(parseInt(file.size))}</div>
+                          )}
+                          {file.parents?.[0] && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigateToId(file.parents[0]);
+                              }}
+                              style={{ ...s.btn("#47ffc8", "outline"), width: "100%", padding: "4px 8px", fontSize: "10px", marginTop: folder ? "8px" : "0", justifyContent: "center" }}
+                            >
+                              Ir a carpeta padre
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══ META LIBRARY TAB ══ */}
+      {source === "meta" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+
+          {/* Controls */}
+          <div style={s.card}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "12px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "4px" }}>
+                {[["all", "Todos"], ["image", "Imágenes"], ["video", "Videos"]].map(([val, label]) => (
+                  <button key={val} onClick={() => setMetaFilter(val)}
+                    style={{ ...s.tag("#47c8ff", metaFilter === val), padding: "5px 12px", cursor: "pointer", border: `1px solid ${metaFilter === val ? "#47c8ff40" : "#1c1c2e"}` }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <select value={metaDateFilter} onChange={e => setMetaDateFilter(e.target.value)}
+                style={{ ...s.input, width: "auto", padding: "5px 10px", fontSize: "12px" }}>
+                <option value="all">Todos los tiempos</option>
+                <option value="30">Últimos 30 días</option>
+                <option value="90">Últimos 90 días</option>
+                <option value="180">Últimos 180 días</option>
+              </select>
+              <div style={{ marginLeft: "auto" }}>
+                <button onClick={() => fetchMetaAssets()} disabled={metaLoading}
+                  style={{ ...s.btn("#5a5a78", "outline"), opacity: metaLoading ? 0.5 : 1 }}>
+                  {metaLoading ? "⟳ Cargando…" : "↻ Recargar"}
+                </button>
+              </div>
+            </div>
+            <div style={{ position: "relative" }}>
+              <span style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", pointerEvents: "none" }}>🔍</span>
+              <input value={metaSearch} onChange={e => setMetaSearch(e.target.value)}
+                placeholder="Buscar por nombre…"
+                style={{ ...s.input, fontSize: "12px", padding: "8px 12px 8px 32px" }} />
+              {metaSearch && (
+                <button type="button" onClick={() => setMetaSearch("")}
+                  style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#5a5a78", cursor: "pointer", fontSize: "13px" }}>✕</button>
+              )}
+            </div>
+          </div>
+
+          {metaError && (
+            <div style={{ padding: "12px 16px", background: "rgba(255,107,71,0.08)", border: "1px solid rgba(255,107,71,0.3)", borderRadius: "6px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>
+              ⚠ {metaError}
+            </div>
+          )}
+
+          {/* Assets grid */}
+          <div style={{ ...s.card, maxHeight: "600px", overflowY: "auto", padding: "20px" }}>
+            {metaLoading && metaAssets.length === 0 ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
+                {[0, 1, 2, 3, 4, 5, 6, 7].map(i => (
+                  <div key={i} style={{ height: "120px", background: "#13131f", borderRadius: "6px", animation: "pulse 1.5s ease-in-out infinite" }} />
+                ))}
+              </div>
+            ) : filteredMetaAssets.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px", fontFamily: "monospace", fontSize: "12px", color: "#5a5a78" }}>
+                {metaAssets.length === 0
+                  ? "Hacé click en \"↻ Recargar\" para cargar la biblioteca de assets de Meta."
+                  : "⚠ Sin resultados para los filtros aplicados."}
+              </div>
+            ) : (
+              <>
+                <div style={{ fontFamily: "monospace", fontSize: "10px", color: "#5a5a78", marginBottom: "12px" }}>
+                  {filteredMetaAssets.length} asset{filteredMetaAssets.length !== 1 ? "s" : ""}
+                  {metaSearch && ` · "${metaSearch}"`}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
+                  {filteredMetaAssets.map(asset => {
+                    const sel = selected.find(f => f.id === asset.id)
+                    const isVideo = asset.mimeType.startsWith("video/")
                     return (
                       <div
-                        key={file.id}
-                        onClick={() => folder ? navigateToId(file.id) : toggleSelect(file)}
+                        key={asset.id}
+                        onClick={() => {
+                          setSelected(prev => {
+                            const exists = prev.find(f => f.id === asset.id)
+                            const next = exists ? prev.filter(f => f.id !== asset.id) : [...prev, asset]
+                            onSelectFiles?.(next)
+                            return next
+                          })
+                        }}
                         style={{
                           background: sel ? "rgba(232,255,71,0.08)" : "#13131f",
                           border: sel ? "1px solid rgba(232,255,71,0.4)" : "1px solid #1c1c2e",
                           borderRadius: "6px", padding: "10px", cursor: "pointer",
                           transition: "all 0.15s", position: "relative",
-                          display: "flex", flexDirection: "column"
                         }}
                       >
                         {sel && (
                           <div style={{ position: "absolute", top: "6px", right: "6px", width: "18px", height: "18px", borderRadius: "50%", background: "#e8ff47", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "800", color: "#000" }}>✓</div>
                         )}
-                        <div style={{ height: "80px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "8px", borderRadius: "4px", overflow: "hidden", background: "#080810" }}>
-                          {file.thumbnailLink ? (
-                            <img src={file.thumbnailLink} alt={file.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <div style={{ width: "100%", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "8px", borderRadius: "4px", overflow: "hidden", background: "#080810", position: "relative" }}>
+                          {isVideo && asset.videoUrl ? (
+                            <video src={asset.videoUrl} autoPlay loop muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : asset.thumbnailLink ? (
+                            <img src={asset.thumbnailLink} alt={asset.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
-                            <span style={{ fontSize: "28px" }}>{folder ? "📂" : file.mimeType?.startsWith("video/") ? "🎬" : "🖼️"}</span>
+                            <span style={{ fontSize: "28px" }}>{isVideo ? "🎬" : "🖼️"}</span>
                           )}
+                          {isVideo && <div style={{ position: "absolute", bottom: "4px", right: "4px", background: "rgba(0,0,0,0.7)", borderRadius: "3px", padding: "1px 5px", fontFamily: "monospace", fontSize: "9px", color: "#fff" }}>VIDEO</div>}
                         </div>
-                        <div style={{ fontFamily: "monospace", fontSize: "10px", color: folder ? "#e8ff47" : "#f0f0f8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {file.name}
+                        <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {asset.name}
                         </div>
-                        <div style={{ flex: 1 }} />
-                        {!folder && file.size && (
-                          <div style={{ fontFamily: "monospace", fontSize: "9px", color: "#5a5a78", marginTop: "2px", marginBottom: "6px" }}>{fmt(parseInt(file.size))}</div>
+                        {asset.width && (
+                          <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78", marginTop: "2px" }}>{asset.width}×{asset.height}</div>
                         )}
-                        {file.parents?.[0] && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigateToId(file.parents[0]);
-                            }}
-                            style={{ ...s.btn("#47ffc8", "outline"), width: "100%", padding: "4px 8px", fontSize: "10px", marginTop: folder ? "8px" : "0", justifyContent: "center" }}
-                          >
-                            Ir a carpeta padre
-                          </button>
+                        {asset.durationSecs != null && (
+                          <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78", marginTop: "2px" }}>{Math.floor(asset.durationSecs / 60)}:{String(asset.durationSecs % 60).padStart(2, "0")}</div>
                         )}
                       </div>
                     )
                   })}
                 </div>
+                {metaHasMore && (
+                  <div style={{ textAlign: "center", marginTop: "16px" }}>
+                    <button
+                      onClick={() => fetchMetaAssets({ append: true, imgCursor: metaImageCursor, vidCursor: metaVideoCursor })}
+                      disabled={metaLoading}
+                      style={{ ...s.btn("#5a5a78", "outline"), margin: "0 auto", opacity: metaLoading ? 0.5 : 1 }}
+                    >
+                      {metaLoading ? "⟳ Cargando…" : "Cargar más"}
+                    </button>
+                  </div>
+                )}
               </>
             )}
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
