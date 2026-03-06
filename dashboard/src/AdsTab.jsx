@@ -1491,7 +1491,7 @@ Evaluá concisamente:
                   </select>
                 </div>
                 <div style={{ background: "#13131f", padding: "12px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
-                  <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#f0f0f8", marginBottom: "8px" }}>CUENTA DE INSTAGRAM (OPCIONAL)</div>
+                  <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#f0f0f8", marginBottom: "8px" }}>CUENTA DE INSTAGRAM</div>
                   <select value={selectedIgAccountId} onChange={e => setSelectedIgAccountId(e.target.value)} style={{ ...s.input, appearance: "none" }} disabled={!selectedPageId || igAccounts.length === 0}>
                     <option value="">Ninguna cuenta de IG</option>
                     {igAccounts.map(ig => <option key={ig.id} value={ig.id}>@{ig.username}</option>)}
