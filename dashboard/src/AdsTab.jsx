@@ -932,7 +932,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
           {/* Assets grid */}
           <div style={{ ...s.card, maxHeight: "600px", overflowY: "auto", overflowX: "hidden", padding: "20px" }}>
             {metaLoading && metaAssets.length === 0 ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "16px" }}>
                 {[0, 1, 2, 3, 4, 5, 6, 7].map(i => (
                   <div key={i} style={{ height: "120px", background: "#13131f", borderRadius: "6px", animation: "pulse 1.5s ease-in-out infinite" }} />
                 ))}
@@ -949,7 +949,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
                   {filteredMetaAssets.length} asset{filteredMetaAssets.length !== 1 ? "s" : ""}
                   {metaSearch && ` · "${metaSearch}"`}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "16px" }}>
                   {filteredMetaAssets.map(asset => {
                     const sel = selected.find(f => f.id === asset.id)
                     const isVideo = asset.mimeType.startsWith("video/")
@@ -972,9 +972,9 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
                         }}
                       >
                         {sel && (
-                          <div style={{ position: "absolute", top: "6px", right: "6px", width: "18px", height: "18px", borderRadius: "50%", background: "#e8ff47", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "800", color: "#000" }}>✓</div>
+                          <div style={{ position: "absolute", top: "6px", right: "6px", width: "18px", height: "18px", borderRadius: "50%", background: "#e8ff47", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "800", color: "#000", zIndex: 10 }}>✓</div>
                         )}
-                        <div style={{ width: "100%", maxWidth: "450px", maxHeight: "450px", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "8px", borderRadius: "4px", overflow: "hidden", background: "#080810", position: "relative", margin: "0 auto" }}>
+                        <div style={{ width: "100%", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "8px", borderRadius: "4px", overflow: "hidden", background: "#080810", position: "relative" }}>
                           {isVideo && asset.videoUrl ? (
                             <video src={asset.videoUrl} autoPlay loop muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : asset.thumbnailLink ? (
