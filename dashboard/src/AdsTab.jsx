@@ -376,6 +376,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
   const [metaAssets, setMetaAssets] = useState([])
   const [metaLoading, setMetaLoading] = useState(false)
   const [metaError, setMetaError] = useState(null)
+  const [metaSourceVal, setMetaSourceVal] = useState("cuenta") // cuenta, facebook, instagram
   const [metaFilter, setMetaFilter] = useState("all")
   const [metaSearch, setMetaSearch] = useState("")
   const [metaDateFilter, setMetaDateFilter] = useState("all")
@@ -531,49 +532,110 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
     })
   }
 
-  const fetchMetaAssets = async ({ append = false, imgCursor = null, vidCursor = null } = {}) => {
-    const accountId = brand?.metaAccounts?.[0]
-    if (!accountId) { setMetaError("Esta marca no tiene cuenta Meta configurada."); return }
+  const fetchMetaAssets = async ({ append = false, imgCursor = null, vidCursor = null, newSource = metaSourceVal } = {}) => {
     if (!META_TOKEN) { setMetaError("VITE_META_ACCESS_TOKEN no configurado en .env.local"); return }
     setMetaLoading(true)
     setMetaError(null)
+
     try {
-      const imgParams = new URLSearchParams({
-        fields: "name,url,width,height,updated_time,hash",
-        limit: "50",
-        access_token: META_TOKEN,
-        ...(imgCursor ? { after: imgCursor } : {}),
-      })
-      const vidParams = new URLSearchParams({
-        fields: "title,picture,source,length,updated_time",
-        limit: "50",
-        access_token: META_TOKEN,
-        ...(vidCursor ? { after: vidCursor } : {}),
-      })
-      const [imgRes, vidRes] = await Promise.all([
-        fetch(`${META_GRAPH}/${accountId}/adimages?${imgParams}`).then(r => r.json()),
-        fetch(`${META_GRAPH}/${accountId}/advideos?${vidParams}`).then(r => r.json()),
-      ])
-      if (imgRes.error) throw new Error(imgRes.error.message)
-      if (vidRes.error) throw new Error(vidRes.error.message)
-      const images = (imgRes.data || []).map(img => ({
-        id: img.hash, name: img.name, thumbnailLink: img.url,
-        mimeType: "image/jpeg", source: "Cuenta",
-        width: img.width, height: img.height, updatedTime: img.updated_time,
-      }))
-      const videos = (vidRes.data || []).map(vid => ({
-        id: vid.id, name: vid.title || `Video ${vid.id}`, thumbnailLink: vid.picture,
-        mimeType: "video/mp4", source: "Cuenta",
-        videoUrl: vid.source,
-        durationSecs: vid.length, updatedTime: vid.updated_time,
-      }))
-      const combined = [...images, ...videos].sort((a, b) => new Date(b.updatedTime) - new Date(a.updatedTime))
-      setMetaAssets(prev => append ? [...prev, ...combined] : combined)
-      setMetaImageCursor(imgRes.paging?.cursors?.after || null)
-      setMetaVideoCursor(vidRes.paging?.cursors?.after || null)
-      setMetaHasMore(!!(imgRes.paging?.next || vidRes.paging?.next))
+      if (newSource === "cuenta") {
+        const accountId = brand?.metaAccounts?.[0]
+        if (!accountId) { setMetaError("Esta marca no tiene cuenta Meta configurada."); setMetaLoading(false); return }
+
+        const imgParams = new URLSearchParams({
+          fields: "name,url,width,height,updated_time,hash",
+          limit: "50",
+          access_token: META_TOKEN,
+          ...(imgCursor ? { after: imgCursor } : {}),
+        })
+        const vidParams = new URLSearchParams({
+          fields: "title,picture,source,length,updated_time",
+          limit: "50",
+          access_token: META_TOKEN,
+          ...(vidCursor ? { after: vidCursor } : {}),
+        })
+        const [imgRes, vidRes] = await Promise.all([
+          fetch(`${META_GRAPH}/${accountId}/adimages?${imgParams}`).then(r => r.json()),
+          fetch(`${META_GRAPH}/${accountId}/advideos?${vidParams}`).then(r => r.json()),
+        ])
+        if (imgRes.error) throw new Error(imgRes.error.message)
+        if (vidRes.error) throw new Error(vidRes.error.message)
+        const images = (imgRes.data || []).map(img => ({
+          id: img.hash, name: img.name || `Image ${img.hash}`, thumbnailLink: img.url,
+          mimeType: "image/jpeg", source: "Cuenta",
+          width: img.width, height: img.height, updatedTime: img.updated_time,
+        }))
+        const videos = (vidRes.data || []).map(vid => ({
+          id: vid.id, name: vid.title || `Video ${vid.id}`, thumbnailLink: vid.picture,
+          mimeType: "video/mp4", source: "Cuenta",
+          videoUrl: vid.source,
+          durationSecs: vid.length, updatedTime: vid.updated_time,
+        }))
+        const combined = [...images, ...videos].sort((a, b) => new Date(b.updatedTime) - new Date(a.updatedTime))
+        setMetaAssets(prev => append ? [...prev, ...combined] : combined)
+        setMetaImageCursor(imgRes.paging?.cursors?.after || null)
+        setMetaVideoCursor(vidRes.paging?.cursors?.after || null)
+        setMetaHasMore(!!(imgRes.paging?.next || vidRes.paging?.next))
+
+      } else if (newSource === "facebook") {
+        const fbId = brand?.facebookPageId
+        if (!fbId || fbId.includes("placeholder")) { setMetaError("Esta marca no tiene un Facebook Page ID configurado todavía."); setMetaLoading(false); return }
+
+        const params = new URLSearchParams({
+          fields: "id,full_picture,message,created_time,attachments{media_type,media_url}",
+          limit: "50",
+          access_token: META_TOKEN,
+          ...(imgCursor ? { after: imgCursor } : {}),
+        })
+        const res = await fetch(`${META_GRAPH}/${fbId}/published_posts?${params}`).then(r => r.json())
+        if (res.error) throw new Error(res.error.message)
+
+        const posts = (res.data || []).filter(p => p.full_picture || p.attachments?.data?.[0]?.media_url).map(p => {
+          const isVideo = p.attachments?.data?.[0]?.media_type === "video_inline" || p.attachments?.data?.[0]?.media_type === "video"
+          return {
+            id: p.id, name: p.message ? p.message.slice(0, 40) + "..." : `Post ${p.id}`,
+            thumbnailLink: p.full_picture || p.attachments?.data?.[0]?.media_url,
+            mimeType: isVideo ? "video/mp4" : "image/jpeg", source: "Facebook",
+            updatedTime: p.created_time,
+            videoUrl: isVideo ? p.attachments?.data?.[0]?.media_url : null
+          }
+        })
+        setMetaAssets(prev => append ? [...prev, ...posts] : posts)
+        setMetaImageCursor(res.paging?.cursors?.after || null)
+        setMetaVideoCursor(null)
+        setMetaHasMore(!!res.paging?.next)
+
+      } else if (newSource === "instagram") {
+        const igId = brand?.instagramAccountId
+        if (!igId || igId.includes("placeholder")) { setMetaError("Esta marca no tiene un Instagram Account ID configurado todavía."); setMetaLoading(false); return }
+
+        const params = new URLSearchParams({
+          fields: "id,media_url,media_type,thumbnail_url,caption,timestamp",
+          limit: "50",
+          access_token: META_TOKEN,
+          ...(imgCursor ? { after: imgCursor } : {}),
+        })
+        const res = await fetch(`${META_GRAPH}/${igId}/media?${params}`).then(r => r.json())
+        if (res.error) throw new Error(res.error.message)
+
+        const media = (res.data || []).map(m => {
+          const isVideo = m.media_type === "VIDEO" || m.media_type === "REELS"
+          return {
+            id: m.id, name: m.caption ? m.caption.slice(0, 40) + "..." : `IG ${m.media_type}`,
+            thumbnailLink: isVideo ? m.thumbnail_url : m.media_url,
+            mimeType: isVideo ? "video/mp4" : "image/jpeg", source: "Instagram",
+            updatedTime: m.timestamp,
+            videoUrl: isVideo ? m.media_url : null
+          }
+        })
+        setMetaAssets(prev => append ? [...prev, ...media] : media)
+        setMetaImageCursor(res.paging?.cursors?.after || null)
+        setMetaVideoCursor(null)
+        setMetaHasMore(!!res.paging?.next)
+      }
+
     } catch (e) {
-      setMetaError("Error al cargar biblioteca Meta: " + e.message)
+      setMetaError(`Error al cargar desde ${newSource}: ` + e.message)
     }
     setMetaLoading(false)
   }
@@ -888,23 +950,34 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
 
           {/* Controls */}
           <div style={s.card}>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "12px", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", gap: "4px" }}>
-                {[["all", "Todos"], ["image", "Imágenes"], ["video", "Videos"]].map(([val, label]) => (
-                  <button key={val} onClick={() => setMetaFilter(val)}
-                    style={{ ...s.tag("#47c8ff", metaFilter === val), padding: "5px 12px", cursor: "pointer", border: `1px solid ${metaFilter === val ? "#47c8ff40" : "#1c1c2e"}` }}>
-                    {label}
-                  </button>
-                ))}
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: "4px" }}>
+                  {[["cuenta", "Cuenta Ads"], ["facebook", "Facebook"], ["instagram", "Instagram"]].map(([val, label]) => (
+                    <button key={val} onClick={() => { setMetaSourceVal(val); fetchMetaAssets({ newSource: val }); }}
+                      style={{ ...s.tag("#e8ff47", metaSourceVal === val), padding: "5px 12px", cursor: "pointer", border: `1px solid ${metaSourceVal === val ? "#e8ff4740" : "#1c1c2e"}` }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ width: "1px", height: "20px", background: "#1c1c2e" }}></div>
+                <div style={{ display: "flex", gap: "4px" }}>
+                  {[["all", "Todos"], ["image", "Imágenes"], ["video", "Videos"]].map(([val, label]) => (
+                    <button key={val} onClick={() => setMetaFilter(val)}
+                      style={{ ...s.tag("#47c8ff", metaFilter === val), padding: "5px 12px", cursor: "pointer", border: `1px solid ${metaFilter === val ? "#47c8ff40" : "#1c1c2e"}` }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <select value={metaDateFilter} onChange={e => setMetaDateFilter(e.target.value)}
+                  style={{ ...s.input, width: "auto", padding: "5px 10px", fontSize: "12px" }}>
+                  <option value="all">Todos los tiempos</option>
+                  <option value="30">Últimos 30 días</option>
+                  <option value="90">Últimos 90 días</option>
+                  <option value="180">Últimos 180 días</option>
+                </select>
               </div>
-              <select value={metaDateFilter} onChange={e => setMetaDateFilter(e.target.value)}
-                style={{ ...s.input, width: "auto", padding: "5px 10px", fontSize: "12px" }}>
-                <option value="all">Todos los tiempos</option>
-                <option value="30">Últimos 30 días</option>
-                <option value="90">Últimos 90 días</option>
-                <option value="180">Últimos 180 días</option>
-              </select>
-              <div style={{ marginLeft: "auto" }}>
+              <div>
                 <button onClick={() => fetchMetaAssets()} disabled={metaLoading}
                   style={{ ...s.btn("#5a5a78", "outline"), opacity: metaLoading ? 0.5 : 1 }}>
                   {metaLoading ? "⟳ Cargando…" : "↻ Recargar"}
