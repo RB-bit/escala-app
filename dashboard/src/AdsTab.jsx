@@ -930,7 +930,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
           )}
 
           {/* Assets grid */}
-          <div style={{ ...s.card, maxHeight: "600px", overflowY: "auto", padding: "20px" }}>
+          <div style={{ ...s.card, maxHeight: "600px", overflowY: "auto", overflowX: "hidden", padding: "20px" }}>
             {metaLoading && metaAssets.length === 0 ? (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
                 {[0, 1, 2, 3, 4, 5, 6, 7].map(i => (
@@ -974,7 +974,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
                         {sel && (
                           <div style={{ position: "absolute", top: "6px", right: "6px", width: "18px", height: "18px", borderRadius: "50%", background: "#e8ff47", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: "800", color: "#000" }}>✓</div>
                         )}
-                        <div style={{ width: "100%", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "8px", borderRadius: "4px", overflow: "hidden", background: "#080810", position: "relative" }}>
+                        <div style={{ width: "100%", maxWidth: "450px", maxHeight: "450px", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "8px", borderRadius: "4px", overflow: "hidden", background: "#080810", position: "relative", margin: "0 auto" }}>
                           {isVideo && asset.videoUrl ? (
                             <video src={asset.videoUrl} autoPlay loop muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : asset.thumbnailLink ? (
