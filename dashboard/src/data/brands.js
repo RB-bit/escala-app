@@ -1,6 +1,26 @@
 // ─── BRAND DATA ────────────────────────────────────────────────────────────────
 export const BRANDS = [
     {
+        id: "mango-tango",
+        name: "Mango Tango",
+        color: "#ff6b47",
+        emoji: "🥭",
+        metaAccounts: ["act_3520086988134735"],
+        facebookPageId: "113204775128654",
+        instagramAccountId: "17841434459401725",
+        tiendaNubeStores: [],
+        users: [],
+        campaigns: [],
+        connections: [
+            { name: "Meta Ads", icon: "📣", status: "connected", detail: "1 cuenta activa", action: "Configurar" },
+            { name: "Facebook Page", icon: "📘", status: "connected", detail: "Mango Tango", action: "Configurar" },
+            { name: "Instagram", icon: "📸", status: "connected", detail: "@mangotango vinculado", action: "Configurar" },
+            { name: "Google Drive", icon: "📁", status: "disconnected", detail: "No conectado", action: "Conectar" },
+            { name: "Claude AI", icon: "🤖", status: "connected", detail: "Claude Sonnet 4.6 · Activo", action: "Configurar" },
+        ],
+        stats: { billing: "—", roas: "—", spend: "—", activeCampaigns: 0 },
+    },
+    {
         id: "soy-rica",
         name: "Soy Rica",
         color: "#e8ff47",

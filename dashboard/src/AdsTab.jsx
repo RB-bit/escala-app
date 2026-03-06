@@ -1123,10 +1123,10 @@ function LaunchStep({ brand, selectedFiles }) {
   const [assetAdSets, setAssetAdSets] = useState({});
   const [fetchedAdSets, setFetchedAdSets] = useState([]);
 
-  const [selectedPageId, setSelectedPageId] = useState("");
+  const [selectedPageId, setSelectedPageId] = useState(brand?.facebookPageId || "");
   const [pages, setPages] = useState([]);
 
-  const [selectedIgAccountId, setSelectedIgAccountId] = useState("");
+  const [selectedIgAccountId, setSelectedIgAccountId] = useState(brand?.instagramAccountId || "");
   const [igAccounts, setIgAccounts] = useState([]);
 
   const [claudeReview, setClaudeReview] = useState(null);
@@ -1140,14 +1140,19 @@ function LaunchStep({ brand, selectedFiles }) {
     if (!globalThis.META_TOKEN) return;
     fetch(`https://graph.facebook.com/v22.0/me/accounts?fields=id,name&access_token=${globalThis.META_TOKEN}`)
       .then(r => r.json())
-      .then(d => { if (d.data) setPages(d.data); if (d.data?.length) setSelectedPageId(d.data[0].id) })
+      .then(d => {
+        if (d.data) {
+          setPages(d.data);
+          if (d.data.length && (!brand?.facebookPageId)) setSelectedPageId(d.data[0].id)
+        }
+      })
       .catch(() => { });
-  }, []);
+  }, [brand]);
 
   useEffect(() => {
     if (!selectedPageId || !globalThis.META_TOKEN) {
       setIgAccounts([]);
-      setSelectedIgAccountId("");
+      if (!brand?.instagramAccountId) setSelectedIgAccountId("");
       return;
     }
     fetch(`https://graph.facebook.com/v22.0/${selectedPageId}/instagram_accounts?fields=id,username,profile_pic&access_token=${globalThis.META_TOKEN}`)
@@ -1155,12 +1160,12 @@ function LaunchStep({ brand, selectedFiles }) {
       .then(d => {
         if (d.data) {
           setIgAccounts(d.data);
-          if (d.data.length > 0) setSelectedIgAccountId(d.data[0].id);
-          else setSelectedIgAccountId("");
+          if (d.data.length > 0 && (!brand?.instagramAccountId)) setSelectedIgAccountId(d.data[0].id);
+          else if (d.data.length === 0) setSelectedIgAccountId("");
         }
       })
       .catch(() => { });
-  }, [selectedPageId]);
+  }, [selectedPageId, brand]);
 
   useEffect(() => {
     if (stage === 2 && campaignMode === "existing" && globalThis.META_TOKEN) {
