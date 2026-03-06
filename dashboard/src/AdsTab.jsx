@@ -539,7 +539,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
     setMetaError(null)
     try {
       const imgParams = new URLSearchParams({
-        fields: "name,url_128,width,height,updated_time,hash",
+        fields: "name,url,width,height,updated_time,hash",
         limit: "50",
         access_token: META_TOKEN,
         ...(imgCursor ? { after: imgCursor } : {}),
@@ -557,13 +557,13 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
       if (imgRes.error) throw new Error(imgRes.error.message)
       if (vidRes.error) throw new Error(vidRes.error.message)
       const images = (imgRes.data || []).map(img => ({
-        id: img.hash, name: img.name, thumbnailLink: img.url_128,
-        mimeType: "image/jpeg", source: "meta",
+        id: img.hash, name: img.name, thumbnailLink: img.url,
+        mimeType: "image/jpeg", source: "Cuenta",
         width: img.width, height: img.height, updatedTime: img.updated_time,
       }))
       const videos = (vidRes.data || []).map(vid => ({
         id: vid.id, name: vid.title || `Video ${vid.id}`, thumbnailLink: vid.picture,
-        mimeType: "video/mp4", source: "meta",
+        mimeType: "video/mp4", source: "Cuenta",
         videoUrl: vid.source,
         durationSecs: vid.length, updatedTime: vid.updated_time,
       }))
@@ -982,6 +982,9 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
                           ) : (
                             <span style={{ fontSize: "28px" }}>{isVideo ? "🎬" : "🖼️"}</span>
                           )}
+                          <div style={{ position: "absolute", top: "6px", left: "6px", background: "rgba(0,0,0,0.7)", borderRadius: "3px", padding: "2px 6px", fontFamily: "monospace", fontSize: "9px", color: "#c47bff", border: "1px solid rgba(196,123,255,0.3)" }}>
+                            {asset.source.toUpperCase()}
+                          </div>
                           {isVideo && <div style={{ position: "absolute", bottom: "4px", right: "4px", background: "rgba(0,0,0,0.7)", borderRadius: "3px", padding: "1px 5px", fontFamily: "monospace", fontSize: "9px", color: "#fff" }}>VIDEO</div>}
                         </div>
                         <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
