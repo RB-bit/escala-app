@@ -527,7 +527,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
     setSelected(prev => {
       const exists = prev.find(f => f.id === file.id)
       const next = exists ? prev.filter(f => f.id !== file.id) : [...prev, file]
-      onSelectFiles?.(next)
+      setTimeout(() => onSelectFiles?.(next), 0)
       return next
     })
   }
@@ -1033,7 +1033,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
                           setSelected(prev => {
                             const exists = prev.find(f => f.id === asset.id)
                             const next = exists ? prev.filter(f => f.id !== asset.id) : [...prev, asset]
-                            onSelectFiles?.(next)
+                            setTimeout(() => onSelectFiles?.(next), 0)
                             return next
                           })
                         }}
@@ -1134,44 +1134,73 @@ function LaunchStep({ brand, selectedFiles }) {
 
   const [launchState, setLaunchState] = useState("idle");
   const [launchResults, setLaunchResults] = useState({});
+  const [metaFetchError, setMetaFetchError] = useState(null);
 
   useEffect(() => {
     // Pages
-    if (!globalThis.META_TOKEN) return;
-    fetch(`https://graph.facebook.com/v22.0/me/accounts?fields=id,name&access_token=${globalThis.META_TOKEN}`)
+    if (!META_TOKEN) {
+      setMetaFetchError("VITE_META_ACCESS_TOKEN no configurado.");
+      return;
+    }
+    setMetaFetchError(null);
+
+    // If brand has a page ID, we use it first, but we still fetch to show options
+    fetch(`https://graph.facebook.com/v22.0/me/accounts?fields=id,name&access_token=${META_TOKEN}`)
       .then(r => r.json())
       .then(d => {
+        if (d.error) throw new Error(d.error.message);
         if (d.data) {
           setPages(d.data);
-          if (d.data.length && (!brand?.facebookPageId)) setSelectedPageId(d.data[0].id)
+          // Auto-select priority: 1. existing selectedPageId, 2. brand setting, 3. first from list
+          if (!selectedPageId) {
+            if (brand?.facebookPageId) setSelectedPageId(brand.facebookPageId);
+            else if (d.data.length) setSelectedPageId(d.data[0].id);
+          }
         }
       })
-      .catch(() => { });
+      .catch(e => {
+        console.error("Error fetching pages:", e);
+        setMetaFetchError("Error al cargar páginas de Facebook: " + e.message);
+      });
   }, [brand]);
 
   useEffect(() => {
-    if (!selectedPageId || !globalThis.META_TOKEN) {
+    if (!selectedPageId || !META_TOKEN) {
       setIgAccounts([]);
       if (!brand?.instagramAccountId) setSelectedIgAccountId("");
       return;
     }
-    fetch(`https://graph.facebook.com/v22.0/${selectedPageId}/instagram_accounts?fields=id,username,profile_pic&access_token=${globalThis.META_TOKEN}`)
+    fetch(`https://graph.facebook.com/v22.0/${selectedPageId}/instagram_accounts?fields=id,username,profile_pic&access_token=${META_TOKEN}`)
       .then(r => r.json())
       .then(d => {
+        if (d.error) {
+          // Some pages might not have IG accounts linked, don't show as fatal error unless it's a real API failure
+          setIgAccounts([]);
+          setSelectedIgAccountId("");
+          return;
+        }
         if (d.data) {
           setIgAccounts(d.data);
-          if (d.data.length > 0 && (!brand?.instagramAccountId)) setSelectedIgAccountId(d.data[0].id);
-          else if (d.data.length === 0) setSelectedIgAccountId("");
+          // Auto-select priority: 1. brand setting, 2. existing, 3. first from list
+          if (brand?.instagramAccountId && d.data.find(ig => ig.id === brand.instagramAccountId)) {
+            setSelectedIgAccountId(brand.instagramAccountId);
+          } else if (d.data.length > 0 && !selectedIgAccountId) {
+            setSelectedIgAccountId(d.data[0].id);
+          } else if (d.data.length === 0) {
+            setSelectedIgAccountId("");
+          }
         }
       })
-      .catch(() => { });
+      .catch(e => {
+        console.error("Error fetching IG accounts:", e);
+      });
   }, [selectedPageId, brand]);
 
   useEffect(() => {
-    if (stage === 2 && campaignMode === "existing" && globalThis.META_TOKEN) {
+    if (stage === 2 && campaignMode === "existing" && META_TOKEN) {
       const accountId = brand?.metaAccounts?.[0];
       if (accountId) {
-        fetch(`https://graph.facebook.com/v22.0/${accountId}/campaigns?fields=id,name,status,objective&access_token=${globalThis.META_TOKEN}`)
+        fetch(`https://graph.facebook.com/v22.0/${accountId}/campaigns?fields=id,name,status,objective&access_token=${META_TOKEN}`)
           .then(r => r.json()).then(d => d.data && setFetchedCampaigns(d.data)).catch(() => { });
       }
     }
@@ -1179,8 +1208,8 @@ function LaunchStep({ brand, selectedFiles }) {
 
   useEffect(() => {
     const cid = campaignMode === "existing" ? selectedCampaignId : null;
-    if (stage === 2 && cid && (adSetMode === "existing" || newAdSet.sourceAdSetId || adSetMode === "multiple") && globalThis.META_TOKEN) {
-      fetch(`https://graph.facebook.com/v22.0/${cid}/adsets?fields=id,name,status,daily_budget&access_token=${globalThis.META_TOKEN}`)
+    if (stage === 2 && cid && (adSetMode === "existing" || newAdSet.sourceAdSetId || adSetMode === "multiple") && META_TOKEN) {
+      fetch(`https://graph.facebook.com/v22.0/${cid}/adsets?fields=id,name,status,daily_budget&access_token=${META_TOKEN}`)
         .then(r => r.json()).then(d => d.data && setFetchedAdSets(d.data)).catch(() => { });
     }
   }, [stage, selectedCampaignId, campaignMode, adSetMode, newAdSet.sourceAdSetId]);
@@ -1223,24 +1252,24 @@ Evaluá concisamente:
 
     try {
       if (campaignMode === "new") {
-        const res = await fetch(`${globalThis.META_GRAPH}/${accountId}/campaigns`, {
+        const res = await fetch(`${META_GRAPH}/${accountId}/campaigns`, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: newCampaign.name, objective: newCampaign.objective, status: targetStatus, special_ad_categories: [newCampaign.specialAdCategory], access_token: globalThis.META_TOKEN })
+          body: JSON.stringify({ name: newCampaign.name, objective: newCampaign.objective, status: targetStatus, special_ad_categories: [newCampaign.specialAdCategory], access_token: META_TOKEN })
         }).then(r => r.json());
         if (res.error) throw new Error(res.error.error_user_msg || res.error.message);
         activeCampaignId = res.id;
       }
 
       if (adSetMode === "new") {
-        let payload = { name: newAdSet.name, campaign_id: activeCampaignId, daily_budget: Number(newAdSet.dailyBudgetOverride || newCampaign.dailyBudget) * 100, billing_event: "IMPRESSIONS", optimization_goal: "OFFSITE_CONVERSIONS", status: targetStatus, access_token: globalThis.META_TOKEN };
+        let payload = { name: newAdSet.name, campaign_id: activeCampaignId, daily_budget: Number(newAdSet.dailyBudgetOverride || newCampaign.dailyBudget) * 100, billing_event: "IMPRESSIONS", optimization_goal: "OFFSITE_CONVERSIONS", status: targetStatus, access_token: META_TOKEN };
         if (newAdSet.sourceAdSetId) {
-          const src = await fetch(`${globalThis.META_GRAPH}/${newAdSet.sourceAdSetId}?fields=targeting,promoted_object&access_token=${globalThis.META_TOKEN}`).then(r => r.json());
+          const src = await fetch(`${META_GRAPH}/${newAdSet.sourceAdSetId}?fields=targeting,promoted_object&access_token=${META_TOKEN}`).then(r => r.json());
           if (src.targeting) payload.targeting = src.targeting;
           if (src.promoted_object) payload.promoted_object = src.promoted_object;
         } else {
           payload.targeting = { geo_locations: { countries: ["AR"] } };
         }
-        const res = await fetch(`${globalThis.META_GRAPH}/${accountId}/adsets`, {
+        const res = await fetch(`${META_GRAPH}/${accountId}/adsets`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         }).then(r => r.json());
@@ -1269,10 +1298,10 @@ Evaluá concisamente:
             const blob = await fetch(asset.source !== "Facebook" && asset.source !== "Instagram" ? `https://www.googleapis.com/drive/v3/files/${asset.id}?alt=media` : blobUrl, { headers: tokenHeader }).then(r => r.blob());
 
             const fd = new FormData();
-            fd.append("access_token", globalThis.META_TOKEN);
+            fd.append("access_token", META_TOKEN);
             if (isVideo) {
               fd.append("source", blob, asset.name + ".mp4");
-              const ur = await fetch(`${globalThis.META_GRAPH}/${accountId}/advideos`, { method: "POST", body: fd }).then(r => r.json());
+              const ur = await fetch(`${META_GRAPH}/${accountId}/advideos`, { method: "POST", body: fd }).then(r => r.json());
               if (ur.error) throw new Error(ur.error.error_user_msg || ur.error.message);
               videoId = ur.id;
             } else {
@@ -1285,7 +1314,7 @@ Evaluá concisamente:
                 uploadBlob = await new Promise(r => cvs.toBlob(r, "image/jpeg", 0.9));
               }
               fd.append("filename", uploadBlob, asset.name + ".jpg");
-              const ur = await fetch(`${globalThis.META_GRAPH}/${accountId}/adimages`, { method: "POST", body: fd }).then(r => r.json());
+              const ur = await fetch(`${META_GRAPH}/${accountId}/adimages`, { method: "POST", body: fd }).then(r => r.json());
               if (ur.error) throw new Error(ur.error.error_user_msg || ur.error.message);
               imageHash = ur.images[asset.name + ".jpg"]?.hash || ur.images[Object.keys(ur.images)[0]]?.hash;
             }
@@ -1296,7 +1325,7 @@ Evaluá concisamente:
 
           let creativePayload = {
             name: `Creative - ${asset.adName}`,
-            access_token: globalThis.META_TOKEN,
+            access_token: META_TOKEN,
           };
 
           const isMultipleText = copyConfig.primaryTexts.length > 1 || copyConfig.headlines.length > 1 || copyConfig.descriptions.length > 1;
@@ -1338,16 +1367,16 @@ Evaluá concisamente:
             }
           }
 
-          const crRes = await fetch(`${globalThis.META_GRAPH}/${accountId}/adcreatives`, {
+          const crRes = await fetch(`${META_GRAPH}/${accountId}/adcreatives`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify(creativePayload)
           }).then(r => r.json());
           if (crRes.error) throw new Error(crRes.error.error_user_msg || crRes.error.message);
 
-          const adRes = await fetch(`${globalThis.META_GRAPH}/${accountId}/ads`, {
+          const adRes = await fetch(`${META_GRAPH}/${accountId}/ads`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              name: asset.adName, adset_id: adSetForAsset, creative: { creative_id: crRes.id }, status: targetStatus, access_token: globalThis.META_TOKEN
+              name: asset.adName, adset_id: adSetForAsset, creative: { creative_id: crRes.id }, status: targetStatus, access_token: META_TOKEN
             })
           }).then(r => r.json());
           if (adRes.error) throw new Error(adRes.error.error_user_msg || adRes.error.message);
@@ -1381,6 +1410,11 @@ Evaluá concisamente:
         {/* ── STAGE 1: ASSET SUMMARY & COPY ── */}
         {stage === 1 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {metaFetchError && (
+              <div style={{ padding: "12px 16px", background: "rgba(255,107,71,0.08)", border: "1px solid rgba(255,107,71,0.3)", borderRadius: "6px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>
+                ⚠ {metaFetchError}
+              </div>
+            )}
             {/* Assets List */}
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div style={s.label}>1. ASSETS SELECCIONADOS ({assetsConfig.length})</div>
