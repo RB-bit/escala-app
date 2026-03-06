@@ -1097,128 +1097,623 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
 // ══════════════════════════════════════════════════════════════════════════════
 // STEP 4 — LAUNCH
 // ══════════════════════════════════════════════════════════════════════════════
+
+// Assuming s, META_TOKEN, META_GRAPH are from outer scope in AdsTab.jsx
 function LaunchStep({ brand, selectedFiles }) {
-  const [instructions, setInstructions] = useState("")
-  const [selectedCampaign, setSelectedCampaign] = useState("")
-  const [launching, setLaunching] = useState(false)
-  const [result, setResult] = useState(null)
+    const [stage, setStage] = useState(1);
+    const [assetsConfig, setAssetsConfig] = useState(
+        selectedFiles.map(f => ({ ...f, adName: f.name ? f.name.replace(/\.[^/.]+$/, "") : `ad_${Math.random().toString(36).substring(7)}`, customThumbnail: "" }))
+    );
 
-  const campaigns = brand?.campaigns ?? []
-  const activeCampaigns = campaigns.filter(c => c.status === "active")
+    const [copyConfig, setCopyConfig] = useState({
+        primaryTexts: [""], headlines: [""], descriptions: [""], websiteUrl: "https://www.example.com", displayLink: "", cta: "LEARN_MORE"
+    });
 
-  const launch = async () => {
-    if (!instructions.trim() || selectedFiles.length === 0) return
-    setLaunching(true)
-    setResult(null)
+    const CTAS = ["SHOP_NOW", "LEARN_MORE", "SIGN_UP", "GET_OFFER", "ORDER_NOW", "BOOK_NOW", "CONTACT_US", "BUY_NOW", "GET_STARTED"];
+    const OBJECTIVES = ["OUTCOME_SALES", "OUTCOME_TRAFFIC", "OUTCOME_ENGAGEMENT", "OUTCOME_LEADS", "OUTCOME_APP_PROMOTION", "OUTCOME_AWARENESS"];
 
-    const prompt = `Sos un agente de Meta Ads para la marca "${brand?.name}". 
-El usuario quiere subir ${selectedFiles.length} archivo(s) a Meta Ads con estas instrucciones: "${instructions}"
-${selectedCampaign ? `Campaña destino: ${selectedCampaign}` : "Sin campaña especificada."}
+    const [campaignMode, setCampaignMode] = useState("existing");
+    const [selectedCampaignId, setSelectedCampaignId] = useState("");
+    const [newCampaign, setNewCampaign] = useState({ name: "Campaña Nueva", objective: "OUTCOME_SALES", dailyBudget: "5000", specialAdCategory: "NONE" });
+    const [fetchedCampaigns, setFetchedCampaigns] = useState([]);
 
-Archivos seleccionados: ${selectedFiles.map(f => f.name).join(", ")}
+    const [adSetMode, setAdSetMode] = useState("existing");
+    const [selectedAdSetId, setSelectedAdSetId] = useState("");
+    const [newAdSet, setNewAdSet] = useState({ name: "Conjunto Nuevo", sourceAdSetId: "", dailyBudgetOverride: "" });
+    const [assetAdSets, setAssetAdSets] = useState({});
+    const [fetchedAdSets, setFetchedAdSets] = useState([]);
 
-Generá un plan de acción detallado en español con:
-1. Qué harías con cada archivo
-2. Configuración recomendada del ad set (objetivo, audiencia, presupuesto sugerido)
-3. Copy sugerido para cada anuncio
-4. Próximos pasos
+    const [selectedPageId, setSelectedPageId] = useState("");
+    const [pages, setPages] = useState([]);
 
-Respondé de forma clara y accionable.`
+    const [claudeReview, setClaudeReview] = useState(null);
+    const [loadingReview, setLoadingReview] = useState(false);
 
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: prompt }]
-        })
-      })
-      const data = await res.json()
-      setResult(data.content?.[0]?.text || "Sin respuesta")
-    } catch {
-      setResult("Error al conectar con Claude. Intentá de nuevo.")
+    const [launchState, setLaunchState] = useState("idle");
+    const [launchResults, setLaunchResults] = useState({});
+
+    useEffect(() => {
+        // Pages
+        if (!globalThis.META_TOKEN) return;
+        fetch(`https://graph.facebook.com/v22.0/me/accounts?fields=id,name&access_token=${globalThis.META_TOKEN}`)
+            .then(r => r.json())
+            .then(d => { if (d.data) setPages(d.data); if (d.data?.length) setSelectedPageId(d.data[0].id) })
+            .catch(() => { });
+    }, []);
+
+    useEffect(() => {
+        if (stage === 2 && campaignMode === "existing" && globalThis.META_TOKEN) {
+            const accountId = brand?.metaAccounts?.[0];
+            if (accountId) {
+                fetch(`https://graph.facebook.com/v22.0/${accountId}/campaigns?fields=id,name,status,objective&access_token=${globalThis.META_TOKEN}`)
+                    .then(r => r.json()).then(d => d.data && setFetchedCampaigns(d.data)).catch(() => { });
+            }
+        }
+    }, [stage, campaignMode, brand]);
+
+    useEffect(() => {
+        const cid = campaignMode === "existing" ? selectedCampaignId : null;
+        if (stage === 2 && cid && (adSetMode === "existing" || newAdSet.sourceAdSetId || adSetMode === "multiple") && globalThis.META_TOKEN) {
+            fetch(`https://graph.facebook.com/v22.0/${cid}/adsets?fields=id,name,status,daily_budget&access_token=${globalThis.META_TOKEN}`)
+                .then(r => r.json()).then(d => d.data && setFetchedAdSets(d.data)).catch(() => { });
+        }
+    }, [stage, selectedCampaignId, campaignMode, adSetMode, newAdSet.sourceAdSetId]);
+
+    const runReview = async () => {
+        setLoadingReview(true);
+        const prompt = `Revisá estos ads para Meta:
+Website: ${copyConfig.websiteUrl}
+Textos principales: ${copyConfig.primaryTexts.join(" | ")}
+Títulos: ${copyConfig.headlines.join(" | ")}
+Descripciones: ${copyConfig.descriptions.join(" | ")}
+CTA: ${copyConfig.cta}
+Objetivo: ${campaignMode === "new" ? newCampaign.objective : "Existente"}
+
+Evaluá concisamente:
+1. Advertí si algún título tiene más de 40 caracteres.
+2. Sugerí CTA más fuerte si aplica.
+3. Chequeá presupuesto si es nuevo (Presupuesto diario: ${newCampaign.dailyBudget || newAdSet.dailyBudgetOverride || "N/A"} ARS).
+4. Calificá textos 1-10 y sugerí mejoras.
+`;
+        try {
+            const res = await fetch("https://api.anthropic.com/v1/messages", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 600, messages: [{ role: "user", content: prompt }] })
+            });
+            const data = await res.json();
+            setClaudeReview(data.content?.[0]?.text || "Sin revisión.");
+        } catch {
+            setClaudeReview("Error en Claude.");
+        }
+        setLoadingReview(false);
+    };
+
+    const handleLaunch = async (targetStatus) => {
+        setLaunchState("launching");
+        const accountId = brand?.metaAccounts?.[0];
+        let activeCampaignId = selectedCampaignId;
+        let activeAdSetId = selectedAdSetId;
+        const results = {};
+
+        try {
+            if (campaignMode === "new") {
+                const res = await fetch(`${globalThis.META_GRAPH}/${accountId}/campaigns`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: newCampaign.name, objective: newCampaign.objective, status: targetStatus, special_ad_categories: [newCampaign.specialAdCategory], access_token: globalThis.META_TOKEN })
+                }).then(r => r.json());
+                if (res.error) throw new Error(res.error.error_user_msg || res.error.message);
+                activeCampaignId = res.id;
+            }
+
+            if (adSetMode === "new") {
+                let payload = { name: newAdSet.name, campaign_id: activeCampaignId, daily_budget: Number(newAdSet.dailyBudgetOverride || newCampaign.dailyBudget) * 100, billing_event: "IMPRESSIONS", optimization_goal: "OFFSITE_CONVERSIONS", status: targetStatus, access_token: globalThis.META_TOKEN };
+                if (newAdSet.sourceAdSetId) {
+                    const src = await fetch(`${globalThis.META_GRAPH}/${newAdSet.sourceAdSetId}?fields=targeting,promoted_object&access_token=${globalThis.META_TOKEN}`).then(r => r.json());
+                    if (src.targeting) payload.targeting = src.targeting;
+                    if (src.promoted_object) payload.promoted_object = src.promoted_object;
+                } else {
+                    payload.targeting = { geo_locations: { countries: ["AR"] } };
+                }
+                const res = await fetch(`${globalThis.META_GRAPH}/${accountId}/adsets`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                }).then(r => r.json());
+                if (res.error) throw new Error(res.error.error_user_msg || res.error.message);
+                activeAdSetId = res.id;
+            }
+
+            for (const asset of assetsConfig) {
+                try {
+                    let imageHash = null;
+                    let videoId = null;
+                    const isVideo = asset.mimeType.startsWith("video/");
+
+                    if (asset.source === "Cuenta") {
+                        if (isVideo) videoId = asset.id;
+                        else imageHash = asset.id;
+                    } else {
+                        const blobUrl = isVideo && asset.videoUrl ? asset.videoUrl : asset.thumbnailLink;
+                        let tokenHeader = {};
+                        if (asset.source !== "Facebook" && asset.source !== "Instagram") {
+                            const gapiToken = window.gapi?.client?.getToken?.()?.access_token;
+                            if (!gapiToken) throw new Error("Falta token de Drive");
+                            tokenHeader = { Authorization: `Bearer ${gapiToken}` };
+                        }
+
+                        const blob = await fetch(asset.source !== "Facebook" && asset.source !== "Instagram" ? `https://www.googleapis.com/drive/v3/files/${asset.id}?alt=media` : blobUrl, { headers: tokenHeader }).then(r => r.blob());
+
+                        const fd = new FormData();
+                        fd.append("access_token", globalThis.META_TOKEN);
+                        if (isVideo) {
+                            fd.append("source", blob, asset.name + ".mp4");
+                            const ur = await fetch(`${globalThis.META_GRAPH}/${accountId}/advideos`, { method: "POST", body: fd }).then(r => r.json());
+                            if (ur.error) throw new Error(ur.error.error_user_msg || ur.error.message);
+                            videoId = ur.id;
+                        } else {
+                            let uploadBlob = blob;
+                            if (blob.type === "image/webp") {
+                                const bmp = await createImageBitmap(blob);
+                                const cvs = document.createElement("canvas");
+                                cvs.width = bmp.width; cvs.height = bmp.height;
+                                cvs.getContext("2d").drawImage(bmp, 0, 0);
+                                uploadBlob = await new Promise(r => cvs.toBlob(r, "image/jpeg", 0.9));
+                            }
+                            fd.append("filename", uploadBlob, asset.name + ".jpg");
+                            const ur = await fetch(`${globalThis.META_GRAPH}/${accountId}/adimages`, { method: "POST", body: fd }).then(r => r.json());
+                            if (ur.error) throw new Error(ur.error.error_user_msg || ur.error.message);
+                            imageHash = ur.images[asset.name + ".jpg"]?.hash || ur.images[Object.keys(ur.images)[0]]?.hash;
+                        }
+                    }
+
+                    const adSetForAsset = adSetMode === "multiple" ? assetAdSets[asset.id] : activeAdSetId;
+                    if (!adSetForAsset) throw new Error("No hay conjunto de anuncios asignado.");
+
+                    let creativePayload = {
+                        name: `Creative - ${asset.adName}`,
+                        access_token: globalThis.META_TOKEN,
+                    };
+
+                    const isMultipleText = copyConfig.primaryTexts.length > 1 || copyConfig.headlines.length > 1 || copyConfig.descriptions.length > 1;
+
+                    if (isMultipleText) {
+                        creativePayload.asset_feed_spec = {
+                            bodies: copyConfig.primaryTexts.filter(t => t).map(text => ({ text })),
+                            titles: copyConfig.headlines.filter(t => t).map(text => ({ text })),
+                            descriptions: copyConfig.descriptions.filter(t => t).map(text => ({ text })),
+                            call_to_action_types: [copyConfig.cta],
+                            link_urls: [{ website_url: copyConfig.websiteUrl }],
+                            ad_formats: [isVideo ? "SINGLE_VIDEO" : "SINGLE_IMAGE"]
+                        };
+                        if (isVideo) creativePayload.asset_feed_spec.videos = [{ video_id: videoId }];
+                        else creativePayload.asset_feed_spec.images = [{ hash: imageHash }];
+                        creativePayload.object_story_spec = { page_id: selectedPageId };
+                    } else {
+                        creativePayload.object_story_spec = { page_id: selectedPageId };
+                        if (isVideo) {
+                            creativePayload.object_story_spec.video_data = {
+                                video_id: videoId,
+                                message: copyConfig.primaryTexts[0],
+                                title: copyConfig.headlines[0],
+                                link_description: copyConfig.descriptions[0],
+                                call_to_action: { type: copyConfig.cta, value: { link: copyConfig.websiteUrl } },
+                                image_url: asset.customThumbnail || undefined
+                            };
+                        } else {
+                            creativePayload.object_story_spec.link_data = {
+                                image_hash: imageHash,
+                                link: copyConfig.websiteUrl,
+                                message: copyConfig.primaryTexts[0],
+                                name: copyConfig.headlines[0],
+                                description: copyConfig.descriptions[0],
+                                call_to_action: { type: copyConfig.cta }
+                            };
+                        }
+                    }
+
+                    const crRes = await fetch(`${globalThis.META_GRAPH}/${accountId}/adcreatives`, {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(creativePayload)
+                    }).then(r => r.json());
+                    if (crRes.error) throw new Error(crRes.error.error_user_msg || crRes.error.message);
+
+                    const adRes = await fetch(`${globalThis.META_GRAPH}/${accountId}/ads`, {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            name: asset.adName, adset_id: adSetForAsset, creative: { creative_id: crRes.id }, status: targetStatus, access_token: globalThis.META_TOKEN
+                        })
+                    }).then(r => r.json());
+                    if (adRes.error) throw new Error(adRes.error.error_user_msg || adRes.error.message);
+
+                    results[asset.id] = { status: "success", adId: adRes.id };
+                } catch (e) {
+                    results[asset.id] = { status: "error", message: e.message };
+                }
+            }
+
+            setLaunchResults(results);
+            setLaunchState("success");
+        } catch (e) {
+            setLaunchState("error");
+            setClaudeReview(e.message);
+        }
     }
-    setLaunching(false)
-  }
 
-  return (
+    return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      <div style={s.card}>
-        <div style={{ fontWeight: "800", fontSize: "15px", marginBottom: "16px" }}>🚀 Lanzamiento a Meta Ads</div>
-
-        {/* Selected files summary */}
-        {selectedFiles.length > 0 ? (
-          <div style={{ marginBottom: "16px", padding: "12px 14px", background: "rgba(71,255,200,0.06)", border: "1px solid rgba(71,255,200,0.2)", borderRadius: "6px" }}>
-            <div style={{ fontFamily: "monospace", fontSize: "10px", color: "#47ffc8", marginBottom: "8px" }}>
-              {selectedFiles.length} ARCHIVO{selectedFiles.length > 1 ? "S" : ""} SELECCIONADO{selectedFiles.length > 1 ? "S" : ""}
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {selectedFiles.map(f => (
-                <span key={f.id} style={{ fontFamily: "monospace", fontSize: "11px", padding: "3px 8px", background: "rgba(71,255,200,0.1)", color: "#47ffc8", borderRadius: "3px" }}>
-                  {f.mimeType?.startsWith("video/") ? "🎬" : "🖼️"} {f.name}
-                </span>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div style={{ marginBottom: "16px", padding: "12px 14px", background: "rgba(255,107,71,0.06)", border: "1px solid rgba(255,107,71,0.2)", borderRadius: "6px", fontFamily: "monospace", fontSize: "12px", color: "#ff6b47" }}>
-            ⚠ Seleccioná archivos en el paso anterior para continuar
-          </div>
-        )}
-
-        {/* Campaign selector */}
-        <div style={{ marginBottom: "12px" }}>
-          <div style={s.label}>CAMPAÑA DESTINO (opcional)</div>
-          <select
-            value={selectedCampaign}
-            onChange={e => setSelectedCampaign(e.target.value)}
-            style={{ ...s.input, appearance: "none" }}
-          >
-            <option value="">Sin campaña específica</option>
-            {activeCampaigns.map(c => (
-              <option key={c.name} value={c.name}>{c.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Instructions */}
-        <div style={{ marginBottom: "16px" }}>
-          <div style={s.label}>TUS INSTRUCCIONES</div>
-          <textarea
-            value={instructions}
-            onChange={e => setInstructions(e.target.value)}
-            placeholder='Ej: "Subí estos 3 videos como nuevos ads en la campaña de retargeting con objetivo conversiones, presupuesto $5000/día cada uno"'
-            style={{ ...s.input, minHeight: "100px", resize: "vertical" }}
-          />
-        </div>
-
-        <button
-          onClick={launch}
-          disabled={launching || selectedFiles.length === 0 || !instructions.trim()}
-          style={{
-            ...s.btn(),
-            opacity: (launching || selectedFiles.length === 0 || !instructions.trim()) ? 0.4 : 1,
-            width: "100%", justifyContent: "center", padding: "12px",
-          }}
-        >
-          {launching ? "⟳ Generando plan de lanzamiento…" : "🚀 Generar plan de lanzamiento"}
-        </button>
-      </div>
-
-      {/* Result */}
-      {result && (
         <div style={s.card}>
-          <div style={s.label}>PLAN DE LANZAMIENTO</div>
-          <div style={{ fontSize: "13px", lineHeight: "1.8", color: "#c8c8e8", whiteSpace: "pre-wrap", marginTop: "8px" }}>
-            {result}
-          </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                <div>
+                    <div style={{ fontWeight: "800", fontSize: "15px", marginBottom: "4px" }}>🚀 Lanzamiento a Meta Ads</div>
+                    <div style={{ fontFamily: "monospace", fontSize: "11px", color: "#5a5a78" }}>
+                        Etapa {stage} de 4 · {selectedFiles.length} asset(s) seleccionados
+                    </div>
+                </div>
+            </div>
+
+            {/* ── STAGE 1: ASSET SUMMARY & COPY ── */}
+            {stage === 1 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                    {/* Assets List */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        <div style={s.label}>1. ASSETS SELECCIONADOS ({assetsConfig.length})</div>
+                        {assetsConfig.map((ass, idx) => {
+                            const isVideo = ass.mimeType.startsWith("video/");
+                            return (
+                                <div key={ass.id} style={{ display: "flex", gap: "12px", background: "#13131f", padding: "12px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
+                                    {/* Thumbnail */}
+                                    <div style={{ width: "80px", height: "80px", background: "#080810", borderRadius: "6px", overflow: "hidden", position: "relative", flexShrink: 0 }}>
+                                        <img src={ass.thumbnailLink || "https://placehold.co/80/080810/5a5a78?text=MEDIA"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                        <div style={{ position: "absolute", bottom: "2px", right: "2px", background: "rgba(0,0,0,0.8)", padding: "1px 4px", fontSize: "8px", fontFamily: "monospace", borderRadius: "2px", color: "#fff" }}>
+                                            {ass.source.toUpperCase()}
+                                        </div>
+                                    </div>
+                                    {/* Config */}
+                                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px" }}>
+                                        <div>
+                                            <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>NOMBRE DEL ANUNCIO</div>
+                                            <input value={ass.adName} onChange={e => {
+                                                const nf = [...assetsConfig]; nf[idx].adName = e.target.value; setAssetsConfig(nf);
+                                            }} style={{ ...s.input, padding: "6px 10px" }} />
+                                        </div>
+                                        {isVideo && (
+                                            <div>
+                                                <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>THUMBNAIL URL (OPCIONAL)</div>
+                                                <input value={ass.customThumbnail} placeholder="https://..." onChange={e => {
+                                                    const nf = [...assetsConfig]; nf[idx].customThumbnail = e.target.value; setAssetsConfig(nf);
+                                                }} style={{ ...s.input, padding: "6px 10px" }} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+
+                    {/* Copy fields */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                        <div style={s.label}>2. COPY DEL ANUNCIO (APLICA A TODOS)</div>
+
+                        {/* Primary Texts */}
+                        <div style={{ background: "#13131f", padding: "12px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
+                            <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#f0f0f8", marginBottom: "8px", display: "flex", justifyContent: "space-between" }}>
+                                <span>TEXTO PRINCIPAL (Admite múltiples para rotación)</span>
+                                {copyConfig.primaryTexts.length < 5 && (
+                                    <button onClick={() => setCopyConfig(p => ({ ...p, primaryTexts: [...p.primaryTexts, ""] }))} style={{ background: "none", border: "none", color: "#47c8ff", cursor: "pointer", fontFamily: "monospace" }}>+ Añadir variación</button>
+                                )}
+                            </div>
+                            {copyConfig.primaryTexts.map((pt, i) => (
+                                <div key={i} style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                                    <textarea value={pt} onChange={e => {
+                                        const nt = [...copyConfig.primaryTexts]; nt[i] = e.target.value; setCopyConfig(p => ({ ...p, primaryTexts: nt }));
+                                    }} placeholder={`Texto principal ${i + 1}`} style={{ ...s.input, minHeight: "60px", resize: "vertical" }} />
+                                    {copyConfig.primaryTexts.length > 1 && (
+                                        <button onClick={() => setCopyConfig(p => ({ ...p, primaryTexts: p.primaryTexts.filter((_, idx) => idx !== i) }))} style={s.btn("#ff6b47", "outline")}>✕</button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Headlines */}
+                        <div style={{ background: "#13131f", padding: "12px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
+                            <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#f0f0f8", marginBottom: "8px", display: "flex", justifyContent: "space-between" }}>
+                                <span>TÍTULO (HASTA 5)</span>
+                                {copyConfig.headlines.length < 5 && (
+                                    <button onClick={() => setCopyConfig(p => ({ ...p, headlines: [...p.headlines, ""] }))} style={{ background: "none", border: "none", color: "#47c8ff", cursor: "pointer", fontFamily: "monospace" }}>+ Añadir variación</button>
+                                )}
+                            </div>
+                            {copyConfig.headlines.map((pt, i) => (
+                                <div key={i} style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                                    <input value={pt} onChange={e => {
+                                        const nt = [...copyConfig.headlines]; nt[i] = e.target.value; setCopyConfig(p => ({ ...p, headlines: nt }));
+                                    }} placeholder={`Título ${i + 1} (Máx 40 chars)`} style={s.input} maxLength={50} />
+                                    {copyConfig.headlines.length > 1 && (
+                                        <button onClick={() => setCopyConfig(p => ({ ...p, headlines: p.headlines.filter((_, idx) => idx !== i) }))} style={s.btn("#ff6b47", "outline")}>✕</button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Descriptions & URLs */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                            <div style={{ background: "#13131f", padding: "12px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
+                                <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#f0f0f8", marginBottom: "8px" }}>DESCRIPCIONES (HASTA 3)</div>
+                                {copyConfig.descriptions.map((pt, i) => (
+                                    <div key={i} style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                                        <input value={pt} onChange={e => {
+                                            const nt = [...copyConfig.descriptions]; nt[i] = e.target.value; setCopyConfig(p => ({ ...p, descriptions: nt }));
+                                        }} placeholder={`Descripción ${i + 1}`} style={s.input} />
+                                    </div>
+                                ))}
+                                {copyConfig.descriptions.length < 3 && (
+                                    <button onClick={() => setCopyConfig(p => ({ ...p, descriptions: [...p.descriptions, ""] }))} style={{ background: "none", border: "none", color: "#47c8ff", cursor: "pointer", fontFamily: "monospace", fontSize: "10px", marginTop: "4px" }}>+ Añadir variación</button>
+                                )}
+                            </div>
+                            <div style={{ background: "#13131f", padding: "12px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
+                                <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#f0f0f8", marginBottom: "8px" }}>URL Y CALL TO ACTION</div>
+                                <input value={copyConfig.websiteUrl} onChange={e => setCopyConfig(p => ({ ...p, websiteUrl: e.target.value }))} placeholder="Website URL (Requerido)" style={{ ...s.input, marginBottom: "8px" }} />
+                                <input value={copyConfig.displayLink} onChange={e => setCopyConfig(p => ({ ...p, displayLink: e.target.value }))} placeholder="Display Link (Opcional)" style={{ ...s.input, marginBottom: "12px" }} />
+                                <select value={copyConfig.cta} onChange={e => setCopyConfig(p => ({ ...p, cta: e.target.value }))} style={{ ...s.input, appearance: "none" }}>
+                                    {CTAS.map(c => <option key={c} value={c}>{c.replace("_", " ")}</option>)}
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* FB Page Selection */}
+                        <div style={{ background: "#13131f", padding: "12px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
+                            <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#f0f0f8", marginBottom: "8px" }}>FACEBOOK PAGE (REQUERIDO PARA CREAR ADS)</div>
+                            <select value={selectedPageId} onChange={e => setSelectedPageId(e.target.value)} style={{ ...s.input, appearance: "none" }}>
+                                <option value="">Seleccioná una página...</option>
+                                {pages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        </div>
+
+                    </div>
+                </div>
+            )}
+
+            {/* ── STAGE 2: CAMPAIGN & AD SET CONFIGURATION ── */}
+            {stage === 2 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+
+                    {/* Campaign Config */}
+                    <div>
+                        <div style={s.label}>1. CAMPAÑA DESTINO</div>
+                        <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
+                            <button onClick={() => setCampaignMode("existing")} style={s.btn(campaignMode === "existing" ? "#e8ff47" : "#5a5a78", campaignMode === "existing" ? "primary" : "outline")}>Usar existente</button>
+                            <button onClick={() => setCampaignMode("new")} style={s.btn(campaignMode === "new" ? "#e8ff47" : "#5a5a78", campaignMode === "new" ? "primary" : "outline")}>Crear nueva</button>
+                        </div>
+
+                        {campaignMode === "existing" && (
+                            <div style={{ background: "#13131f", padding: "16px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
+                                <select value={selectedCampaignId} onChange={e => setSelectedCampaignId(e.target.value)} style={{ ...s.input, appearance: "none" }}>
+                                    <option value="">Seleccioná una campaña...</option>
+                                    {fetchedCampaigns.map(c => <option key={c.id} value={c.id}>{c.name} ({c.objective}) [{c.status}]</option>)}
+                                </select>
+                            </div>
+                        )}
+
+                        {campaignMode === "new" && (
+                            <div style={{ background: "#13131f", padding: "16px", borderRadius: "8px", border: "1px solid #1c1c2e", display: "flex", flexDirection: "column", gap: "12px" }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                                    <div>
+                                        <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>NOMBRE DE CAMPAÑA</div>
+                                        <input value={newCampaign.name} onChange={e => setNewCampaign(p => ({ ...p, name: e.target.value }))} style={s.input} />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>OBJETIVO</div>
+                                        <select value={newCampaign.objective} onChange={e => setNewCampaign(p => ({ ...p, objective: e.target.value }))} style={{ ...s.input, appearance: "none" }}>
+                                            {OBJECTIVES.map(c => <option key={c} value={c}>{c.replace("OUTCOME_", "")}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                                    <div>
+                                        <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>PRESUPUESTO DIARIO (ARS)</div>
+                                        <input type="number" value={newCampaign.dailyBudget} onChange={e => setNewCampaign(p => ({ ...p, dailyBudget: e.target.value }))} style={s.input} />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>CATEGORÍA ESPECIAL</div>
+                                        <select value={newCampaign.specialAdCategory} onChange={e => setNewCampaign(p => ({ ...p, specialAdCategory: e.target.value }))} style={{ ...s.input, appearance: "none" }}>
+                                            <option value="NONE">Ninguna (Defecto)</option>
+                                            <option value="EMPLOYMENT">Empleo</option>
+                                            <option value="HOUSING">Vivienda</option>
+                                            <option value="CREDIT">Crédito</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Ad Set Config */}
+                    <hr style={{ border: "none", borderTop: "1px solid #1c1c2e" }} />
+                    <div>
+                        <div style={s.label}>2. CONJUNTO DE ANUNCIOS (AD SET)</div>
+                        <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
+                            <button onClick={() => setAdSetMode("existing")} style={s.btn(adSetMode === "existing" ? "#47c8ff" : "#5a5a78", adSetMode === "existing" ? "primary" : "outline")}>Usar existente</button>
+                            <button onClick={() => setAdSetMode("new")} style={s.btn(adSetMode === "new" ? "#47c8ff" : "#5a5a78", adSetMode === "new" ? "primary" : "outline")}>Crear nuevo</button>
+                            <button onClick={() => setAdSetMode("multiple")} style={s.btn(adSetMode === "multiple" ? "#c47bff" : "#5a5a78", adSetMode === "multiple" ? "primary" : "outline")}>Múltiples conjuntos</button>
+                        </div>
+
+                        {adSetMode === "existing" && (
+                            <div style={{ background: "#13131f", padding: "16px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
+                                <select value={selectedAdSetId} onChange={e => setSelectedAdSetId(e.target.value)} style={{ ...s.input, appearance: "none" }}>
+                                    <option value="">Seleccioná un conjunto...</option>
+                                    {fetchedAdSets.map(c => <option key={c.id} value={c.id}>{c.name} [${c.daily_budget ? c.daily_budget / 100 : "—"}]</option>)}
+                                </select>
+                            </div>
+                        )}
+
+                        {adSetMode === "new" && (
+                            <div style={{ background: "#13131f", padding: "16px", borderRadius: "8px", border: "1px solid #1c1c2e", display: "flex", flexDirection: "column", gap: "12px" }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                                    <div>
+                                        <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>NOMBRE DEL CONJUNTO</div>
+                                        <input value={newAdSet.name} onChange={e => setNewAdSet(p => ({ ...p, name: e.target.value }))} style={s.input} />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>COPIAR CONFIGURACIÓN DE</div>
+                                        <select value={newAdSet.sourceAdSetId} onChange={e => setNewAdSet(p => ({ ...p, sourceAdSetId: e.target.value }))} style={{ ...s.input, appearance: "none" }}>
+                                            <option value="">(Sin copiar - defaults)</option>
+                                            {fetchedAdSets.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>PRESUPUESTO DIARIO OVERRIDE (ARS - Opcional)</div>
+                                    <input type="number" value={newAdSet.dailyBudgetOverride} onChange={e => setNewAdSet(p => ({ ...p, dailyBudgetOverride: e.target.value }))} placeholder="Usa el de la campaña si está vacío" style={s.input} />
+                                </div>
+                            </div>
+                        )}
+
+                        {adSetMode === "multiple" && (
+                            <div style={{ background: "#13131f", padding: "16px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
+                                <div style={{ fontSize: "12px", color: "#c8c8e8", marginBottom: "16px" }}>Asigná cada asset a un conjunto de anuncios distinto para crear múltiples versiones de un solo clic.</div>
+                                {assetsConfig.map(ass => (
+                                    <div key={ass.id} style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "12px" }}>
+                                        <div style={{ width: "40px", height: "40px", borderRadius: "4px", overflow: "hidden", background: "#080810", flexShrink: 0 }}>
+                                            <img src={ass.thumbnailLink || "https://placehold.co/40/080810/5a5a78?text=MEDIA"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <select value={assetAdSets[ass.id] || ""} onChange={e => setAssetAdSets(p => ({ ...p, [ass.id]: e.target.value }))} style={{ ...s.input, appearance: "none" }}>
+                                                <option value="">Seleccioná un conjunto...</option>
+                                                {fetchedAdSets.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── STAGE 3: CLAUDE AI REVIEW ── */}
+            {stage === 3 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                    <div style={{ background: "rgba(232,255,71,0.06)", border: "1px solid rgba(232,255,71,0.2)", borderRadius: "8px", padding: "20px" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <span style={{ fontSize: "24px" }}>🤖</span>
+                                <div style={{ fontWeight: "700", color: "#e8ff47", fontSize: "15px" }}>Revisión Preventiva</div>
+                            </div>
+                            {!claudeReview && (
+                                <button onClick={runReview} disabled={loadingReview} style={s.btn()}>
+                                    {loadingReview ? "⟳ Analizando..." : "Solicitar Revisión"}
+                                </button>
+                            )}
+                        </div>
+
+                        {!claudeReview ? (
+                            <div style={{ fontSize: "13px", color: "#c8c8e8" }}>Hacé clic en el botón para que Claude analice la configuración, presupuesto y copy antes de publicarlos en Meta. Esto prevendrá errores comunes.</div>
+                        ) : (
+                            <div style={{ background: "#13131f", padding: "16px", borderRadius: "8px", border: "1px solid #1c1c2e", color: "#f0f0f8", fontSize: "13px", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                                {claudeReview}
+                            </div>
+                        )}
+                    </div>
+                    {claudeReview && (
+                        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                            <button onClick={() => setStage(4)} style={s.btn()}>Aceptar revisión y continuar →</button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── STAGE 4: LAUNCH SUMMARY ── */}
+            {stage === 4 && launchState === "idle" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                    <div style={{ background: "#13131f", padding: "20px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
+                        <div style={s.label}>RESUMEN DE LANZAMIENTO</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginTop: "12px", fontSize: "13px" }}>
+                            <div>
+                                <span style={{ color: "#5a5a78" }}>Assets a subir:</span> <span style={{ color: "#47ffc8", fontWeight: "700" }}>{assetsConfig.length} medios</span>
+                            </div>
+                            <div>
+                                <span style={{ color: "#5a5a78" }}>Textos principales:</span> <span style={{ color: "#e8ff47", fontWeight: "700" }}>{copyConfig.primaryTexts.filter(t => t).length} variaciones</span>
+                            </div>
+                            <div>
+                                <span style={{ color: "#5a5a78" }}>Campaña:</span> <span style={{ color: "#f0f0f8", fontWeight: "700" }}>{campaignMode === "new" ? "NUEVA: " + newCampaign.name : "EXISTENTE: " + selectedCampaignId}</span>
+                            </div>
+                            <div>
+                                <span style={{ color: "#5a5a78" }}>Ad Sets:</span> <span style={{ color: "#f0f0f8", fontWeight: "700" }}>{adSetMode === "new" ? "NUEVO: " + newAdSet.name : adSetMode === "multiple" ? "MÚLTIPLES" : "EXISTENTE: " + selectedAdSetId}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "16px" }}>
+                        <button disabled={!selectedPageId} onClick={() => handleLaunch("PAUSED")} style={{ ...s.btn("#47ffc8"), flex: 1, padding: "16px", justifyContent: "center" }}>
+                            Lanzar Pausado (Recomendado)
+                        </button>
+                        <button disabled={!selectedPageId} onClick={() => handleLaunch("ACTIVE")} style={{ ...s.btn("#ff6b47"), flex: 1, padding: "16px", justifyContent: "center" }}>
+                            Lanzar Activo
+                        </button>
+                    </div>
+                    {!selectedPageId && <div style={{ color: "#ff6b47", fontSize: "12px", textAlign: "center" }}>⚠ Falta seleccionar una página de Facebook en el paso 1.</div>}
+                </div>
+            )}
+
+            {/* ── LAUNCHING / SUCCESS STATE ── */}
+            {launchState !== "idle" && (
+                <div style={{ textAlign: "center", padding: "40px" }}>
+                    {launchState === "launching" && (
+                        <>
+                            <div style={{ fontSize: "40px", marginBottom: "16px", animation: "pulse 1.5s infinite" }}>🚀</div>
+                            <div style={{ fontSize: "18px", fontWeight: "700", marginBottom: "8px" }}>Lanzando a Meta Ads...</div>
+                            <div style={{ color: "#5a5a78", fontSize: "13px" }}>Subiendo medios y configurando anuncios. Esto puede demorar unos segundos.</div>
+                        </>
+                    )}
+                    {launchState === "success" && (
+                        <>
+                            <div style={{ fontSize: "40px", marginBottom: "16px" }}>✅</div>
+                            <div style={{ fontSize: "18px", fontWeight: "700", marginBottom: "16px" }}>Lanzamiento completado</div>
+
+                            <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxWidth: "400px", margin: "0 auto 24px" }}>
+                                {Object.entries(launchResults).map(([id, result]) => {
+                                    const asset = assetsConfig.find(a => a.id === id);
+                                    return (
+                                        <div key={id} style={{ display: "flex", justifyContent: "space-between", background: "#13131f", padding: "10px", borderRadius: "6px", border: "1px solid #1c1c2e" }}>
+                                            <span style={{ fontSize: "13px", color: "#f0f0f8" }}>{asset?.adName}</span>
+                                            {result.status === "success" ? (
+                                                <span style={{ color: "#47ffc8", fontSize: "12px", fontFamily: "monospace" }}>ÉXITO ({result.adId})</span>
+                                            ) : (
+                                                <span style={{ color: "#ff6b47", fontSize: "12px", fontFamily: "monospace", maxWidth: "150px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={result.message}>ERROR: {result.message}</span>
+                                            )}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+
+                            <a href={`https://adsmanager.facebook.com/adsmanager/manage/ads?act=${brand?.metaAccounts?.[0]}`} target="_blank" rel="noopener noreferrer" style={{ ...s.btn("#e8ff47"), textDecoration: "none", display: "inline-flex", margin: "0 auto" }}>
+                                Abrir Ads Manager ↗
+                            </a>
+                        </>
+                    )}
+                    {launchState === "error" && (
+                        <>
+                            <div style={{ fontSize: "40px", marginBottom: "16px" }}>❌</div>
+                            <div style={{ fontSize: "18px", fontWeight: "700", marginBottom: "16px", color: "#ff6b47" }}>Error en el lanzamiento</div>
+                            <div style={{ color: "#c8c8e8", fontSize: "13px", background: "#13131f", padding: "16px", borderRadius: "8px", border: "1px solid #1c1c2e", whiteSpace: "pre-wrap", maxWidth: "500px", margin: "0 auto" }}>
+                                {claudeReview /* Reusing state to store error locally */}
+                            </div>
+                            <button onClick={() => setLaunchState("idle")} style={{ ...s.btn("#5a5a78", "outline"), margin: "24px auto 0" }}>Volver a intentar</button>
+                        </>
+                    )}
+                </div>
+            )}
+
         </div>
-      )}
+
+        {launchState === "idle" && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <button onClick={() => setStage(Math.max(1, stage - 1))} disabled={stage === 1} style={{ ...s.btn("#5a5a78", "outline"), opacity: stage === 1 ? 0.3 : 1 }}>← Anterior</button>
+                <button onClick={() => setStage(Math.min(4, stage + 1))} disabled={stage === 4 || (stage === 3 && !claudeReview)} style={{ ...s.btn(), opacity: (stage === 4 || (stage === 3 && !claudeReview)) ? 0.3 : 1 }}>Siguiente →</button>
+            </div>
+        )}
     </div>
-  )
+)
 }
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
