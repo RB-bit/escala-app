@@ -1136,6 +1136,11 @@ function LaunchStep({ brand, selectedFiles }) {
   const [launchResults, setLaunchResults] = useState({});
   const [metaFetchError, setMetaFetchError] = useState(null);
 
+  const [fetchedPixels, setFetchedPixels] = useState([]);
+  const [selectedPixelId, setSelectedPixelId] = useState("");
+  const [selectedEvent, setSelectedEvent] = useState("PURCHASE");
+  const [pixelEvents, setPixelEvents] = useState(["PURCHASE", "LEAD", "SCHEDULE", "ADD_TO_CART", "INITIATE_CHECKOUT"]);
+
   useEffect(() => {
     // Pages
     if (!META_TOKEN) {
@@ -1207,6 +1212,41 @@ function LaunchStep({ brand, selectedFiles }) {
   }, [stage, campaignMode, brand]);
 
   useEffect(() => {
+    if (stage === 2 && META_TOKEN) {
+      const accountId = brand?.metaAccounts?.[0];
+      if (accountId) {
+        fetch(`https://graph.facebook.com/v22.0/${accountId}/adspixels?fields=id,name,last_fired_time&access_token=${META_TOKEN}`)
+          .then(r => r.json())
+          .then(d => {
+            if (d.data) {
+              setFetchedPixels(d.data);
+              if (d.data.length > 0 && !selectedPixelId) {
+                setSelectedPixelId(d.data[0].id);
+              }
+            }
+          })
+          .catch(e => console.error("Error fetching pixels:", e));
+      }
+    }
+  }, [stage, brand]);
+
+  useEffect(() => {
+    if (selectedPixelId && META_TOKEN) {
+      fetch(`https://graph.facebook.com/v22.0/${selectedPixelId}/stats?fields=event,count&access_token=${META_TOKEN}`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.data) {
+            const seenEvents = d.data.map(i => i.event);
+            const defaultEvents = ["PURCHASE", "LEAD", "SCHEDULE", "ADD_TO_CART", "INITIATE_CHECKOUT"];
+            const combined = [...new Set([...seenEvents, ...defaultEvents])];
+            setPixelEvents(combined);
+          }
+        })
+        .catch(e => console.error("Error fetching pixel events:", e));
+    }
+  }, [selectedPixelId]);
+
+  useEffect(() => {
     const cid = campaignMode === "existing" ? selectedCampaignId : null;
     if (stage === 2 && cid && (adSetMode === "existing" || newAdSet.sourceAdSetId || adSetMode === "multiple") && META_TOKEN) {
       fetch(`https://graph.facebook.com/v22.0/${cid}/adsets?fields=id,name,status,daily_budget&access_token=${META_TOKEN}`)
@@ -1261,11 +1301,24 @@ Evaluá concisamente:
       }
 
       if (adSetMode === "new") {
-        let payload = { name: newAdSet.name, campaign_id: activeCampaignId, daily_budget: Number(newAdSet.dailyBudgetOverride || newCampaign.dailyBudget) * 100, billing_event: "IMPRESSIONS", optimization_goal: "OFFSITE_CONVERSIONS", status: targetStatus, access_token: META_TOKEN };
+        let payload = {
+          name: newAdSet.name,
+          campaign_id: activeCampaignId,
+          daily_budget: Number(newAdSet.dailyBudgetOverride || newCampaign.dailyBudget) * 100,
+          billing_event: "IMPRESSIONS",
+          optimization_goal: "OFFSITE_CONVERSIONS",
+          status: targetStatus,
+          access_token: META_TOKEN,
+          promoted_object: { pixel_id: selectedPixelId, custom_event_type: selectedEvent }
+        };
         if (newAdSet.sourceAdSetId) {
           const src = await fetch(`${META_GRAPH}/${newAdSet.sourceAdSetId}?fields=targeting,promoted_object&access_token=${META_TOKEN}`).then(r => r.json());
           if (src.targeting) payload.targeting = src.targeting;
-          if (src.promoted_object) payload.promoted_object = src.promoted_object;
+          if (selectedPixelId) {
+            payload.promoted_object = { pixel_id: selectedPixelId, custom_event_type: selectedEvent };
+          } else if (src.promoted_object) {
+            payload.promoted_object = src.promoted_object;
+          }
         } else {
           payload.targeting = { geo_locations: { countries: ["AR"] } };
         }
@@ -1655,6 +1708,52 @@ Evaluá concisamente:
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Pixel & Event Selection */}
+            <hr style={{ border: "none", borderTop: "1px solid #1c1c2e" }} />
+            <div>
+              <div style={s.label}>3. CONVERSIÓN (PIXEL & EVENTO)</div>
+              <div style={{ background: "#13131f", padding: "16px", borderRadius: "8px", border: "1px solid #1c1c2e", display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  {/* Pixel Selection */}
+                  <div>
+                    <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>PIXEL DE META</div>
+                    <select value={selectedPixelId} onChange={e => setSelectedPixelId(e.target.value)} style={{ ...s.input, appearance: "none" }}>
+                      {fetchedPixels.length === 0 && <option value="">No se encontraron pixels</option>}
+                      {fetchedPixels.map(px => (
+                        <option key={px.id} value={px.id}>{px.name} ({px.id})</option>
+                      ))}
+                    </select>
+                    {selectedPixelId && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px" }}>
+                        <div style={{
+                          width: "8px", height: "8px", borderRadius: "50%",
+                          background: "#47ffc8", boxShadow: "0 0 8px #47ffc880",
+                          animation: "pulse 2s infinite"
+                        }} />
+                        <div style={{ fontSize: "10px", fontFamily: "monospace", color: "#47ffc8" }}>
+                          Pixel Activo · Última actividad: {
+                            fetchedPixels.find(px => px.id === selectedPixelId)?.last_fired_time
+                              ? new Date(fetchedPixels.find(px => px.id === selectedPixelId).last_fired_time).toLocaleString()
+                              : "Recientemente"
+                          }
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Event Selection */}
+                  <div>
+                    <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>EVENTO DE CONVERSIÓN</div>
+                    <select value={selectedEvent} onChange={e => setSelectedEvent(e.target.value)} style={{ ...s.input, appearance: "none" }}>
+                      {pixelEvents.map(ev => (
+                        <option key={ev} value={ev}>{ev.replace(/_/g, " ")}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
