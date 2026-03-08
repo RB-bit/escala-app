@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - ESCALA App</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        h1 {
+            color: #080810;
+            border-bottom: 2px solid #e8ff47;
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            color: #5a5a78;
+            margin-top: 30px;
+        }
+
+        .updated {
+            background: #f0f0f8;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+
+        code {
+            background: #1c1c2e;
+            color: #e8ff47;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Privacy Policy - ESCALA</h1>
+
+    <div class="updated">
+        <strong>Last updated:</strong> March 6, 2026
+    </div>
+
+    <p><strong>ESCALA</strong> is a local development tool designed for e-commerce entrepreneurs to manage and optimize
+        their Meta Ads campaigns. This Privacy Policy explains how we handle your data.</p>
+
+    <h2>1. Information We Collect</h2>
+    <p>ESCALA operates entirely in your browser as a local development application. We do NOT store, process, or
+        transmit any personal data to external servers. All data processing happens locally on your machine.</p>
+    <ul>
+        <li><strong>Meta Ads Data:</strong> Campaign performance, ad creatives, and account information are fetched
+            directly from Meta's API and displayed locally.</li>
+        <li><strong>Tienda Nube Data:</strong> Store orders and product information are retrieved via API and shown only
+            in your browser session.</li>
+        <li><strong>Google Drive:</strong> File listings and assets are accessed through Google's OAuth and never stored
+            by ESCALA.</li>
+    </ul>
+
+    <h2>2. How We Use Your Information</h2>
+    <p>All integrations (Meta Ads, Tienda Nube, Google Drive) are used solely to:</p>
+    <ul>
+        <li>Display real-time campaign performance dashboards</li>
+        <li>Enable creation and management of ad campaigns</li>
+        <li>Facilitate asset selection from your cloud storage</li>
+        <li>Provide AI-powered recommendations via Claude API</li>
+    </ul>
+
+    <h2>3. API Permissions</h2>
+    <p>ESCALA requests the following Meta permissions exclusively for ad management functionality:</p>
+    <ul>
+        <li><code>ads_management</code> - Create and manage ad campaigns</li>
+        <li><code>ads_read</code> - Read campaign performance data</li>
+        <li><code>pages_manage_ads</code> - Publish ads on behalf of Facebook Pages</li>
+        <li><code>pages_read_engagement</code> - Access page insights</li>
+        <li><code>business_management</code> - Manage business assets</li>
+    </ul>
+    <p>These permissions are required by Meta's API to perform ad operations and are not used for any other purpose.</p>
+
+    <h2>4. Third-Party Services</h2>
+    <p>ESCALA integrates with:</p>
+    <ul>
+        <li><strong>Meta Platforms, Inc.</strong> - For ads management (subject to Meta's Data Policy)</li>
+        <li><strong>Tienda Nube</strong> - For e-commerce data (subject to Tienda Nube's Privacy Policy)</li>
+        <li><strong>Google LLC</strong> - For Drive file access (subject to Google's Privacy Policy)</li>
+        <li><strong>Anthropic PBC</strong> - For AI coaching features (Claude API calls made directly from browser)</li>
+    </ul>
+    <p>We do not share your data with any other third parties.</p>
+
+    <h2>5. Data Security</h2>
+    <p>Since ESCALA runs locally:</p>
+    <ul>
+        <li>No database or backend server stores your information</li>
+        <li>API tokens are stored in local environment files (<code>.env.local</code>) and never transmitted</li>
+        <li>All sessions are browser-based and cleared when you close the tab</li>
+    </ul>
+
+    <h2>6. Your Rights</h2>
+    <p>As all data remains on your device, you have complete control. You can:</p>
+    <ul>
+        <li>Revoke API access at any time through Meta Business Suite, Tienda Nube, or Google Account settings</li>
+        <li>Delete local environment files to remove all stored tokens</li>
+        <li>Clear browser storage to erase session data</li>
+    </ul>
+
+    <h2>7. Children's Privacy</h2>
+    <p>ESCALA is designed for business use and is not intended for users under 18 years of age. We do not knowingly
+        collect data from children.</p>
+
+    <h2>8. Changes to This Policy</h2>
+    <p>We may update this Privacy Policy periodically. Any changes will be reflected in the "Last updated" date above.
+        For significant changes, we will notify users through the application interface.</p>
+
+    <h2>9. Contact Us</h2>
+    <p>For questions about this Privacy Policy or data practices, contact us at:</p>
+    <p><strong>Email:</strong> <a href="mailto:rodrigocbossi@gmail.com">rodrigocbossi@gmail.com</a></p>
+
+    <hr style="margin: 40px 0; border: none; border-top: 1px solid #1c1c2e;">
+    <p style="font-size: 12px; color: #5a5a78;">
+        ESCALA is a development tool for e-commerce entrepreneurs.
+    </p>
+</body>
+
+</html>
