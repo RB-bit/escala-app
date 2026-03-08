@@ -6,7 +6,7 @@ console.log('CLIENT_ID:', GOOGLE_CLIENT_ID ? '[DEFINED ✓]' : '[UNDEFINED ✗ �
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
 const META_TOKEN = import.meta.env.VITE_META_ACCESS_TOKEN
-const META_GRAPH = "https://graph.facebook.com/v21.0"
+const META_GRAPH = "https://graph.facebook.com/v22.0"
 
 // ─── STEPS ─────────────────────────────────────────────────────────────────────
 const STEPS = [
@@ -1150,7 +1150,7 @@ function LaunchStep({ brand, selectedFiles }) {
     setMetaFetchError(null);
 
     // If brand has a page ID, we use it first, but we still fetch to show options
-    fetch(`https://graph.facebook.com/v22.0/me/accounts?fields=id,name&access_token=${META_TOKEN}`)
+    fetch(`${META_GRAPH}/me/accounts?fields=id,name,access_token&access_token=${META_TOKEN}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) throw new Error(d.error.message);
@@ -1175,7 +1175,8 @@ function LaunchStep({ brand, selectedFiles }) {
       if (!brand?.instagramAccountId) setSelectedIgAccountId("");
       return;
     }
-    fetch(`https://graph.facebook.com/v22.0/${selectedPageId}/instagram_accounts?fields=id,username,profile_pic&access_token=${META_TOKEN}`)
+    const pageToken = pages.find(p => p.id === selectedPageId)?.access_token || META_TOKEN;
+    fetch(`${META_GRAPH}/${selectedPageId}/instagram_accounts?fields=id,username,profile_pic&access_token=${pageToken}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) {
@@ -1205,7 +1206,7 @@ function LaunchStep({ brand, selectedFiles }) {
     if (stage === 2 && campaignMode === "existing" && META_TOKEN) {
       const accountId = brand?.metaAccounts?.[0];
       if (accountId) {
-        fetch(`https://graph.facebook.com/v22.0/${accountId}/campaigns?fields=id,name,status,objective&access_token=${META_TOKEN}`)
+        fetch(`${META_GRAPH}/${accountId}/campaigns?fields=id,name,status,objective&access_token=${META_TOKEN}`)
           .then(r => r.json()).then(d => d.data && setFetchedCampaigns(d.data)).catch(() => { });
       }
     }
@@ -1215,7 +1216,7 @@ function LaunchStep({ brand, selectedFiles }) {
     if (stage === 2 && META_TOKEN) {
       const accountId = brand?.metaAccounts?.[0];
       if (accountId) {
-        fetch(`https://graph.facebook.com/v22.0/${accountId}/adspixels?fields=id,name,last_fired_time&access_token=${META_TOKEN}`)
+        fetch(`${META_GRAPH}/${accountId}/adspixels?fields=id,name,last_fired_time&access_token=${META_TOKEN}`)
           .then(r => r.json())
           .then(d => {
             if (d.data) {
@@ -1232,7 +1233,7 @@ function LaunchStep({ brand, selectedFiles }) {
 
   useEffect(() => {
     if (selectedPixelId && META_TOKEN) {
-      fetch(`https://graph.facebook.com/v22.0/${selectedPixelId}/stats?fields=event,count&access_token=${META_TOKEN}`)
+      fetch(`${META_GRAPH}/${selectedPixelId}/stats?fields=event,count&access_token=${META_TOKEN}`)
         .then(r => r.json())
         .then(d => {
           if (d.data) {
@@ -1249,7 +1250,7 @@ function LaunchStep({ brand, selectedFiles }) {
   useEffect(() => {
     const cid = campaignMode === "existing" ? selectedCampaignId : null;
     if (stage === 2 && cid && (adSetMode === "existing" || newAdSet.sourceAdSetId || adSetMode === "multiple") && META_TOKEN) {
-      fetch(`https://graph.facebook.com/v22.0/${cid}/adsets?fields=id,name,status,daily_budget&access_token=${META_TOKEN}`)
+      fetch(`${META_GRAPH}/${cid}/adsets?fields=id,name,status,daily_budget&access_token=${META_TOKEN}`)
         .then(r => r.json()).then(d => d.data && setFetchedAdSets(d.data)).catch(() => { });
     }
   }, [stage, selectedCampaignId, campaignMode, adSetMode, newAdSet.sourceAdSetId]);
