@@ -9,7 +9,7 @@ Construir una app gamificada para que cualquier emprendedor argentino con tienda
 
 La app funciona como un RPG de negocios: cada usuario tiene un nivel de facturación, misiones activas generadas por IA basadas en su data real, y recompensas por cumplir objetivos de revenue.
 
-**Visión a futuro:** Producto SaaS público con múltiples marcas, usuarios con roles, y onboarding propio.
+**Visión a futuro:** Producto SaaS público con múltiples organizaciones, usuarios con roles, y onboarding propio.
 
 ---
 
@@ -33,11 +33,11 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 
 
 ### Correr el dashboard local
 ```bash
-cd /Users/rodboss/desktop/app/dashboard && npm run dev
+cd /Users/rodboss/desktop/app/dashboard && npm run dev -- --open
 # Abre en http://localhost:5173
 ```
 
-### Cargar variables de entorno Meta Ads
+### Cargar variables de entorno
 ```bash
 cd /Users/rodboss/desktop/app && set -a && source shared/auth/.env && set +a
 ```
@@ -49,44 +49,89 @@ cd /Users/rodboss/desktop/app && set -a && source shared/auth/.env && set +a && 
 
 ---
 
+## 🏛️ Arquitectura del producto
+
+### Jerarquía de datos
+```
+Organización (Master)
+  ├── usuarios: [{ email, rol: "owner" | "editor" | "viewer" }]
+  └── Proyectos (= marcas / tiendas)
+        ├── usuarios: [{ email, rol: "owner" | "editor" | "viewer" }]
+        ├── conexiones: { meta[], googleAds[], tiendaNube[], shopify[], googleDrive }
+        ├── objetivos: { revenue, roas, periodo }
+        └── tabs: Dashboard, Creación de Ads, Reporting, Progreso, Alertas
+```
+
+### Roles de usuario
+- **Owner** — acceso total al proyecto y organización
+- **Editor** — puede crear y editar contenido, no puede eliminar proyectos
+- **Viewer** — solo lectura
+
+Un usuario puede tener roles distintos en proyectos distintos dentro de la misma organización.
+
+### Tabs por proyecto
+| Tab | Descripción |
+|---|---|
+| Dashboard | KPIs del proyecto, misiones activas, logros |
+| Creación de Ads | Flujo de 4 pasos: Research → Roadmap creativo → Assets Drive → Lanzamiento |
+| Reporting | Campañas Meta Ads, métricas, evolución |
+| Progreso | Objetivos del proyecto, nivel gamificado, stats |
+| Alertas | Notificaciones transversales (ROAS bajo, stock crítico, overspend) |
+| Conexiones | Estado de todas las integraciones |
+
+### Flujo de Creación de Ads (4 pasos dentro del mismo tab)
+```
+1. Research / Análisis de cuenta publicitaria
+   └── Claude analiza campañas activas → identifica qué está fatigando → sugiere ángulos
+2. Creative Roadmap
+   └── Hipótesis documentadas → priorización → brief por concepto
+3. Assets de Drive
+   └── Explorador de Google Drive → selección de archivos → preview
+4. Lanzamiento a Meta
+   └── Configuración de ad set → subida de assets → publicación directa
+```
+
+---
+
 ## 🗂️ Estructura del proyecto
 
 ```
 app/
 ├── agents/                          # Agentes futuros
 ├── dashboard/                       # App React (Vite) — localhost:5173
-│   └── src/
-│       └── App.jsx                  # Dashboard principal (multi-marca en progreso)
+│   ├── src/
+│   │   └── App.jsx                  # Dashboard principal multi-marca
+│   └── .env.local                   # Variables Vite (nunca commitear)
 ├── mcp-servers/                     # Submodules de repos forkeados
-│   ├── meta-ads-analyzer/           # Fork: RB-bit/meta-ads-analyzer
-│   ├── google-ads-analyzer/         # Fork: RB-bit/google-ads-analyzer
-│   └── google-ads-mcp/              # Fork: RB-bit/google-ads-mcp
+│   ├── meta-ads-analyzer/
+│   ├── google-ads-analyzer/
+│   └── google-ads-mcp/
 ├── shared/
 │   ├── auth/
 │   │   ├── .env                     # Credenciales reales (nunca commitear)
-│   │   └── tiendanube-config.example.json  # Generado por agente
+│   │   └── tiendanube-config.example.json
 │   └── docs/
-│       └── tiendanube-api.md        # Generado por agente
+│       └── tiendanube-api.md
 ├── .gitmodules
 ├── .gitignore
 ├── CLAUDE.md                        # Este archivo
-├── ROADMAP.html                     # Roadmap visual interactivo
-└── escala-dashboard.html            # Backup HTML del dashboard
+├── ROADMAP.html                     # Roadmap visual
+└── escala-dashboard.html            # Backup HTML
 ```
 
 ---
 
 ## 🔧 Stack tecnológico
 
-| Herramienta | Rol | Prioridad | Estado |
-|---|---|---|---|
-| Claude Sonnet 4.6 | Motor IA / Coach | P1 | ✅ Activo |
-| Meta Ads API | Publicidad principal | P1 | ✅ Conectado |
-| Google Drive API | Assets para ads | P1 | 🔜 Pendiente |
-| Tienda Nube API | Data del negocio | P1 | 🔜 Pendiente |
-| Google Ads API | Publicidad secundaria | P2 | 🔜 Pendiente |
-| Antigravity AI | Orquestador agentes | P2 | ✅ Activo |
-| Shopify API | E-commerce alternativo | P3 | ⏸ Fase 03 |
+| Herramienta | Rol | Estado |
+|---|---|---|
+| Claude Sonnet 4.6 | Motor IA / Coach / Creative Intelligence | ✅ Activo |
+| Meta Ads API | Publicidad principal + uploader de ads | ✅ Conectado |
+| Google Drive API | Storage de assets para ads | 🔜 Próximo |
+| Tienda Nube API | Data del negocio (órdenes, productos, stock) | ✅ Conectado |
+| Google Ads API | Publicidad secundaria | 🔜 Fase 02 |
+| Antigravity AI | Orquestador de agentes | ✅ Activo |
+| Shopify API | E-commerce alternativo | ⏸ Fase 03 |
 
 ---
 
@@ -117,54 +162,50 @@ app/
 META_ACCESS_TOKEN=...
 META_AD_ACCOUNT_ID=act_...
 META_APP_SECRET=...
+TIENDANUBE_APP_ID=27024
+TIENDANUBE_CLIENT_SECRET=...
+TIENDANUBE_ACCESS_TOKEN=...
+TIENDANUBE_USER_ID=2091475
 ```
 
-> ⚠️ El token de Meta compartido accidentalmente en el chat fue regenerado.
+### Variables en `dashboard/.env.local` (Vite, nunca commitear)
+```
+VITE_TN_TOKEN=...
+VITE_TN_STORE_ID=2091475
+```
+
+> ⚠️ Regenerar tokens de Meta cada 60 días.
 
 ---
 
-## 🗺️ Roadmap — 4 Fases
+## 🗺️ Roadmap — 4 Fases (revisado 03/03/2026)
 
-### FASE 01 · MVP (Mes 1–3) · $0 → $1M ARS
-- **F-00** Onboarding gamificado + conexión de cuentas *(en progreso)*
-- **F-01** Publicar anuncios en Meta Ads desde Google Drive *(pendiente)*
-- **F-02** Análisis campañas Meta Ads + reportes Claude ✅ *(funcionando)*
-- **F-03** Dashboard Tienda Nube — *pre-req: registrarse como Partner App*
+### FASE 01 · MVP · $0 → $1M ARS
+- **F-00** ✅ Dashboard multi-marca + arquitectura base
+- **F-01** ✅ Meta Ads análisis + Coach IA
+- **F-02** ✅ Tienda Nube dashboard (órdenes, productos, stock, health score)
+- **F-03** 🔜 **Sistema de usuarios y permisos** (Owner/Editor/Viewer por proyecto) ← PRÓXIMO
+- **F-04** 🔜 **Google Drive → Meta Ads uploader** (Drive explorer + subida de imágenes/videos/reels)
+- **F-05** 🔜 Seteo de objetivos por proyecto (revenue, ROAS target, periodo)
 
-### FASE 02 · Core Intelligence (Mes 3–6) · $1M → $10M ARS
-- **F-04** Coach IA de campañas
-- **F-05** Análisis Google Ads integrado
-- **F-06** Alertas inteligentes
-- **F-07** Generador de copy para ads
+### FASE 02 · Core Intelligence · $1M → $10M ARS
+- **F-06** 🔜 Tab "Creación de Ads" con flujo de 4 pasos (Research → Roadmap → Assets → Launch)
+- **F-07** 🔜 Creative Intelligence Report semanal (análisis de fatiga + top 5-10 conceptos a testear)
+- **F-08** 🔜 Google Ads integrado
+- **F-09** 🔜 Sistema de alertas transversal (ROAS bajo, stock crítico, overspend, learning phase)
+- **F-10** 🔜 Reporting avanzado (evolución temporal, comparativas entre marcas)
 
-### FASE 03 · Growth Automation (Mes 6–10) · $10M → $50M ARS
-- **F-08** Agente autónomo de campañas
-- **F-09** Sync stock ↔ ads
-- **F-10** Reportes semanales automáticos
-- **F-11** Integración Shopify
+### FASE 03 · Growth Automation · $10M → $50M ARS
+- **F-11** 🔜 Agente autónomo de campañas
+- **F-12** 🔜 Sync stock ↔ ads (pausa ads si stock bajo, reactiva con stock)
+- **F-13** 🔜 Reportes PDF semanales automáticos
+- **F-14** 🔜 Shopify integración
 
-### FASE 04 · Scale Platform (Mes 10–14) · $50M → $100M ARS
-- **F-12** Gamificación completa
-- **F-13** Predicción de revenue
-- **F-14** Multi-cuenta para agencias / SaaS público
-
----
-
-## 🏢 Arquitectura multi-marca (en progreso)
-
-Cada marca tiene:
-```javascript
-{
-  id, name, color,
-  metaAccounts: [],      // múltiples cuentas Meta Ads
-  tiendaNubeStores: [],  // múltiples tiendas
-  googleAdsAccounts: [],
-  users: []              // con roles: owner / editor / viewer
-}
-```
-
-Vista consolidada de todas las marcas + dashboard por marca individual.
-Diseñado para escalar a SaaS: usuario → workspace → marcas → integraciones.
+### FASE 04 · SaaS Público · $50M → $100M ARS
+- **F-15** 🔜 Auth propio (login, onboarding, billing)
+- **F-16** 🔜 Multi-organización pública
+- **F-17** 🔜 Gamificación completa + leaderboard entre usuarios
+- **F-18** 🔜 Predicción de revenue con IA
 
 ---
 
@@ -174,45 +215,51 @@ Diseñado para escalar a SaaS: usuario → workspace → marcas → integracione
 - **Misiones diarias** generadas por Claude basadas en data real
 - **Score del negocio** 0–100
 - **Badges** compartibles por hitos
-- **Mapa de progreso** visual
+- **Mapa de progreso** visual por proyecto
+- **Vista consolidada** de la organización con suma de todos los proyectos
 
 ---
 
-## 📍 Estado actual
+## 📍 Estado actual (03/03/2026)
 
-### ✅ Completado — Sesión 1 (01/03/2026)
-- [x] Workspace local `/Users/rodboss/desktop/app`
-- [x] Repo GitHub `RB-bit/escala-app` con branch tracking
-- [x] 3 repos forkeados como submodules (meta-ads-analyzer, google-ads-analyzer, google-ads-mcp)
-- [x] Meta Ads MCP funcionando — 39 tools, 15 cuentas activas
-- [x] Dashboard React corriendo en localhost:5173 (Vite + React)
-- [x] Coach IA con Claude Sonnet 4.6 integrado en el dashboard
-- [x] Antigravity configurado: Agent-assisted + Claude Sonnet 4.6
-- [x] ROADMAP.html commiteado
-- [x] Node 20 instalado via nvm
-
-### 🤖 Agente Antigravity trabajando (01/03/2026 — noche)
-- [ ] Multi-marca en `dashboard/src/App.jsx`
-- [ ] Documentación Tienda Nube API en `shared/docs/`
-- [ ] `tiendanube-config.example.json` en `shared/auth/`
+### ✅ Completado
+- [x] Dashboard React en localhost:5173 con 6 tabs
+- [x] Arquitectura multi-marca (Soy Rica, Cavaliery, MamaYoQuiero)
+- [x] Meta Ads MCP — 39 tools, 15 cuentas activas
+- [x] Tienda Nube API — órdenes, productos, stock, health score
+- [x] Coach IA con Claude Sonnet 4.6
+- [x] Node 20 via nvm
+- [x] Tokens en variables de entorno (no en código)
+- [x] Tienda Nube Partner App creada (App ID: 27024)
 
 ### 🔜 Próxima sesión
-- [ ] Revisar trabajo del agente + testear multi-marca en localhost:5173
-- [ ] Iniciar registro Partner App Tienda Nube → https://partners.tiendanube.com
-- [ ] Conectar Google Ads API
-- [ ] F-01: subir anuncios desde Google Drive → Meta Ads
-- [ ] F-03: Dashboard Tienda Nube (stock + ventas)
-- [ ] Deploy de la app (local → web)
+- [ ] F-03: Sistema de usuarios y permisos en App.jsx
+- [ ] F-04: Conectar Google Drive API + explorador de archivos
+- [ ] F-04: Subida de assets desde Drive a Meta Ads
+- [ ] Verificar acceso al segundo Business Manager de Meta
+- [ ] Actualizar ROADMAP.html con nueva estructura
 
 ---
 
 ## 🔐 Seguridad
 
 - **NUNCA** commitear tokens o credenciales
-- Todo en `shared/auth/.env` (en `.gitignore`)
-- Antigravity: Trust solo en esta carpeta, nunca en carpetas padre
+- Todo en `shared/auth/.env` y `dashboard/.env.local` (ambos en `.gitignore`)
+- Antigravity: Trust solo en `/Users/rodboss/desktop/app`, nunca en carpetas padre
 - Modo Agent-assisted — el agente pide aprobación antes de ejecutar
-- Token Meta Ads: regenerar cada 60 días
+## REGLAS DE DESARROLLO
+
+### CRÍTICO — Edición de archivos JSX/JS
+- NUNCA usar scripts Python para editar archivos .jsx o .js
+- Los scripts Python siempre introducen syntax errors en JSX
+- Siempre editar los archivos directamente con las herramientas de edición de código
+- Hacer cambios pequeños e incrementales, verificar que el archivo es JSX válido después de cada cambio
+- Si el archivo tiene un syntax error, usar `git checkout -- <archivo>` para revertir
+
+### CRÍTICO — Node version
+- SIEMPRE activar Node 20 antes de cualquier comando npm/node:
+  export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && nvm use 20
+- El proyecto falla con cualquier versión distinta de Node 20
 
 ---
 
@@ -232,6 +279,13 @@ Diseñado para escalar a SaaS: usuario → workspace → marcas → integracione
 - Setup completo workspace y repo GitHub
 - Meta Ads MCP conectado y funcionando (39 tools, 15 cuentas)
 - Dashboard React con 5 tabs: Dashboard, Campañas, Conexiones, Progreso, Coach IA
-- Arquitectura multi-marca iniciada (agente trabajando)
-- Documentación Tienda Nube API (agente trabajando)
-- Node 20 instalado via nvm para compatibilidad con MCP
+- Node 20 instalado via nvm
+
+### Sesión 2 — 03/03/2026
+- F-02: Tienda Nube Partner App creada (App ID 27024), OAuth completado, API funcionando
+- F-02: Tab Tienda Nube en dashboard con órdenes, productos, stock y health score reales
+- Tokens movidos a variables de entorno (VITE_TN_TOKEN en .env.local)
+- Arquitectura multi-marca completada por agente Antigravity
+- Roadmap revisado con nueva estructura: Organización → Proyectos → Usuarios/Roles
+- Flujo de Creación de Ads definido: Research → Roadmap → Assets Drive → Lanzamiento
+- Identificado próximo feature crítico: Sistema de usuarios y permisos (F-03)
