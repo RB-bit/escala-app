@@ -1102,7 +1102,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
 function LaunchStep({ brand, selectedFiles }) {
   const [stage, setStage] = useState(1);
   const [assetsConfig, setAssetsConfig] = useState(
-    selectedFiles.map(f => ({ ...f, adName: f.name ? f.name.replace(/\.[^/.]+$/, "") : `ad_${Math.random().toString(36).substring(7)}`, customThumbnail: "" }))
+    (selectedFiles || []).map(f => ({ ...f, adName: f.name ? f.name.replace(/\.[^/.]+$/, "") : `ad_${Math.random().toString(36).substring(7)}`, customThumbnail: "" }))
   );
 
   const [copyConfig, setCopyConfig] = useState({
@@ -1334,7 +1334,7 @@ Evaluá concisamente:
         try {
           let imageHash = null;
           let videoId = null;
-          const isVideo = asset.mimeType.startsWith("video/");
+          const isVideo = asset?.mimeType?.startsWith("video/") || false;
 
           if (asset.source === "Cuenta") {
             if (isVideo) videoId = asset.id;
@@ -1472,14 +1472,14 @@ Evaluá concisamente:
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div style={s.label}>1. ASSETS SELECCIONADOS ({assetsConfig.length})</div>
               {assetsConfig.map((ass, idx) => {
-                const isVideo = ass.mimeType.startsWith("video/");
+                const isVideo = ass?.mimeType?.startsWith("video/") || false;
                 return (
                   <div key={ass.id} style={{ display: "flex", gap: "12px", background: "#13131f", padding: "12px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
                     {/* Thumbnail */}
                     <div style={{ width: "80px", height: "80px", background: "#080810", borderRadius: "6px", overflow: "hidden", position: "relative", flexShrink: 0 }}>
                       <img src={ass.thumbnailLink || "https://placehold.co/80/080810/5a5a78?text=MEDIA"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       <div style={{ position: "absolute", bottom: "2px", right: "2px", background: "rgba(0,0,0,0.8)", padding: "1px 4px", fontSize: "8px", fontFamily: "monospace", borderRadius: "2px", color: "#fff" }}>
-                        {ass.source.toUpperCase()}
+                        {(ass?.source || "unknown").toUpperCase()}
                       </div>
                     </div>
                     {/* Config */}
