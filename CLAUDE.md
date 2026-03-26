@@ -232,12 +232,11 @@ VITE_TN_STORE_ID=2091475
 - [x] Tokens en variables de entorno (no en código)
 - [x] Tienda Nube Partner App creada (App ID: 27024)
 
-### 🔜 Próxima sesión
-- [ ] F-03: Sistema de usuarios y permisos en App.jsx
-- [ ] F-04: Conectar Google Drive API + explorador de archivos
-- [ ] F-04: Subida de assets desde Drive a Meta Ads
-- [ ] Verificar acceso al segundo Business Manager de Meta
-- [ ] Actualizar ROADMAP.html con nueva estructura
+### Próxima sesión
+- [ ] Decidir: datos de Meta viven en brands (actual) o en meta_connections (original) — unificar antes del Prompt 3
+- [ ] Prompt 2: Auth con Supabase (Login.jsx + auth gate)
+- [ ] Prompt 3: OAuth flow Meta desde la UI (MetaConnectModal)
+- [ ] F-04: Google Drive + uploader a Meta
 
 ---
 
@@ -289,3 +288,12 @@ VITE_TN_STORE_ID=2091475
 - Roadmap revisado con nueva estructura: Organización → Proyectos → Usuarios/Roles
 - Flujo de Creación de Ads definido: Research → Roadmap → Assets Drive → Lanzamiento
 - Identificado próximo feature crítico: Sistema de usuarios y permisos (F-03)
+
+### Sesión 4 — 12/03/2026
+- Brands migradas de hardcodeado a Supabase dinámico
+- Creado brandsService.js con getBrands, createBrand, updateBrand
+- App.jsx: carga brands desde Supabase al montar con fallback automático a brands.js
+- Tabla brands extendida con campos: meta_accounts, facebook_page_id, instagram_account_id, connections (JSONB), stats (JSONB)
+- SQL supabase_setup.sql generado con las 4 brands iniciales (Soy Rica, Cavaliery, MamaYoQuiero, Onafit)
+- Loading screen con micro-animaciones agregado al mount de la app
+- Botón "Nueva marca" + modal en tab Conexiones

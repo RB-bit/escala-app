@@ -1,6 +1,5 @@
-import { BRANDS } from "../data/brands"
-
-export default function Topbar({ selectedBrand }) {
+export default function Topbar({ selectedBrand, brands }) {
+    const brandCount = (brands || []).length
     return (
         <div style={{ gridColumn: "1/-1", background: "#0e0e1a", borderBottom: "1px solid #1c1c2e", display: "flex", alignItems: "center", padding: "0 24px", gap: "16px" }}>
             <div style={{ fontSize: "20px", fontWeight: "800", letterSpacing: "-0.04em" }}>ESCALA <span style={{ color: "#e8ff47" }}>⚡</span></div>
@@ -13,7 +12,7 @@ export default function Topbar({ selectedBrand }) {
             )}
             {!selectedBrand && (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "4px 12px", background: "rgba(232,255,71,0.07)", border: "1px solid rgba(232,255,71,0.2)", borderRadius: "6px", fontSize: "13px", fontWeight: "600", color: "#e8ff47" }}>
-                    📊 Vista Consolidada — {BRANDS.length} marcas
+                    📊 Vista Consolidada — {brandCount} marcas
                 </div>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "rgba(232,255,71,0.08)", border: "1px solid rgba(232,255,71,0.2)", borderRadius: "6px", padding: "4px 12px", fontFamily: "monospace", fontSize: "12px", color: "#e8ff47", marginLeft: "auto" }}>
