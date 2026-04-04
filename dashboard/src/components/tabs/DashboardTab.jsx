@@ -15,10 +15,10 @@ export default function DashboardTab({ selectedBrand }) {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "12px" }}>
                 {[
-                    { label: "FACTURACIÓN HOY", value: selectedBrand.stats.billing, change: "↑ +23% vs ayer", color: "#e8ff47", up: true },
-                    { label: "ROAS PROMEDIO", value: selectedBrand.stats.roas, change: "↑ +0.3 esta semana", color: "#47ffc8", up: true },
-                    { label: "GASTO ADS HOY", value: selectedBrand.stats.spend, change: "↑ +12% vs ayer", color: "#ff6b47", up: false },
-                    { label: "CAMPAÑAS ACTIVAS", value: String(selectedBrand.stats.activeCampaigns), change: "3 en learning phase", color: "#c47bff", up: null },
+                    { label: "FACTURACIÓN HOY", value: selectedBrand?.stats?.billing || "—", change: "↑ +23% vs ayer", color: "#e8ff47", up: true },
+                    { label: "ROAS PROMEDIO", value: selectedBrand?.stats?.roas || "—", change: "↑ +0.3 esta semana", color: "#47ffc8", up: true },
+                    { label: "GASTO ADS HOY", value: selectedBrand?.stats?.spend || "—", change: "↑ +12% vs ayer", color: "#ff6b47", up: false },
+                    { label: "CAMPAÑAS ACTIVAS", value: String(selectedBrand?.stats?.activeCampaigns || 0), change: "0 en learning phase", color: "#c47bff", up: null },
                 ].map((s, i) => (
                     <div key={i} style={{ background: "#13131f", border: "1px solid #1c1c2e", borderRadius: "8px", padding: "16px 18px", borderTop: `2px solid ${s.color}` }}>
                         <div style={{ fontFamily: "monospace", fontSize: "10px", color: "#5a5a78", marginBottom: "8px" }}>{s.label}</div>
@@ -33,8 +33,8 @@ export default function DashboardTab({ selectedBrand }) {
                     {[
                         { text: "Revisá las campañas en Learning Phase", p: "alta", done: false },
                         { text: "Conectá Tienda Nube para ver tu stock", p: "media", done: false },
-                        { text: `Escalar campaña top (ROAS ${Math.max(...selectedBrand.campaigns.map(c => c.roas))}x)`, p: "alta", done: false },
-                        { text: "Meta Ads conectado ✓", p: "done", done: true },
+                        { text: `Escalar campaña top (ROAS ${selectedBrand?.campaigns?.length ? Math.max(...selectedBrand.campaigns.map(c => c.roas)) : 0}x)`, p: "alta", done: false },
+                        { text: "Meta Ads conectado ✓", p: "done", done: !!selectedBrand?.meta_connections?.length },
                     ].map((m, i) => (
                         <div key={i} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderBottom: "1px solid #1c1c2e", opacity: m.done ? 0.4 : 1 }}>
                             <div style={{ width: "18px", height: "18px", borderRadius: "50%", border: m.done ? "none" : "2px solid #252538", background: m.done ? "#47ffc8" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", flexShrink: 0 }}>{m.done ? "✓" : ""}</div>

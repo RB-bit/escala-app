@@ -1,6 +1,7 @@
-import { BRANDS } from "../data/brands"
+import { signOut } from "../lib/auth"
 
-export default function Sidebar({ selectedBrand, activeTab, isConsolidated, selectBrand, setActiveTab, nav }) {
+export default function Sidebar({ selectedBrand, activeTab, isConsolidated, selectBrand, setActiveTab, nav, brands }) {
+    const brandList = brands || []
     return (
         <div style={{ background: "#0e0e1a", borderRight: "1px solid #1c1c2e", padding: "20px 0", display: "flex", flexDirection: "column", gap: "4px", overflowY: "auto" }}>
 
@@ -15,19 +16,19 @@ export default function Sidebar({ selectedBrand, activeTab, isConsolidated, sele
                 >
                     <div style={{ width: "8px", height: "8px", borderRadius: "2px", background: "linear-gradient(135deg,#e8ff47,#47ffc8,#c47bff)", flexShrink: 0 }} />
                     <span style={{ fontSize: "12px", fontWeight: "600", color: isConsolidated ? "#e8ff47" : "#5a5a78", flex: 1 }}>Todas las marcas</span>
-                    <span style={{ fontFamily: "monospace", fontSize: "9px", padding: "2px 5px", borderRadius: "3px", background: "rgba(90,90,120,0.2)", color: "#5a5a78" }}>{BRANDS.length}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: "9px", padding: "2px 5px", borderRadius: "3px", background: "rgba(90,90,120,0.2)", color: "#5a5a78" }}>{brandList.length}</span>
                 </div>
 
                 {/* Individual brands */}
-                {BRANDS.map(brand => (
+                {brandList.filter(Boolean).map(brand => (
                     <div
                         key={brand.id}
                         onClick={() => selectBrand(brand)}
-                        style={{ display: "flex", alignItems: "center", gap: "10px", padding: "7px 8px", borderRadius: "6px", cursor: "pointer", background: selectedBrand?.id === brand.id ? "rgba(255,255,255,0.05)" : "transparent", border: selectedBrand?.id === brand.id ? `1px solid ${brand.color}30` : "1px solid transparent", marginBottom: "2px", transition: "all 0.15s" }}
+                        style={{ display: "flex", alignItems: "center", gap: "10px", padding: "7px 8px", borderRadius: "6px", cursor: "pointer", background: selectedBrand?.id === brand.id ? "rgba(255,255,255,0.05)" : "transparent", border: selectedBrand?.id === brand.id ? `1px solid ${brand.color || "#e8ff47"}30` : "1px solid transparent", marginBottom: "2px", transition: "all 0.15s" }}
                     >
-                        <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: brand.color, flexShrink: 0, boxShadow: selectedBrand?.id === brand.id ? `0 0 6px ${brand.color}80` : "none" }} />
-                        <span style={{ fontSize: "12px", fontWeight: "600", color: selectedBrand?.id === brand.id ? brand.color : "#5a5a78", flex: 1 }}>{brand.emoji} {brand.name}</span>
-                        <span style={{ fontFamily: "monospace", fontSize: "9px", padding: "2px 5px", borderRadius: "3px", background: `${brand.color}15`, color: brand.color }}>{brand.campaigns.filter(c => c.status === "active").length}▲</span>
+                        <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: brand.color || "#e8ff47", flexShrink: 0, boxShadow: selectedBrand?.id === brand.id ? `0 0 6px ${brand.color || "#e8ff47"}80` : "none" }} />
+                        <span style={{ fontSize: "12px", fontWeight: "600", color: selectedBrand?.id === brand.id ? (brand.color || "#e8ff47") : "#5a5a78", flex: 1 }}>{brand.emoji || "🚀"} {brand.name}</span>
+                        <span style={{ fontFamily: "monospace", fontSize: "9px", padding: "2px 5px", borderRadius: "3px", background: `${brand.color || "#e8ff47"}15`, color: brand.color || "#e8ff47" }}>{(brand.campaigns || []).filter(c => c && c.status === "active").length}▲</span>
                     </div>
                 ))}
             </div>
@@ -49,6 +50,28 @@ export default function Sidebar({ selectedBrand, activeTab, isConsolidated, sele
                     {item.badge && <span style={{ marginLeft: "auto", fontFamily: "monospace", fontSize: "10px", padding: "2px 6px", borderRadius: "3px", background: "rgba(232,255,71,0.15)", color: "#e8ff47" }}>{item.badge}</span>}
                 </div>
             ))}
+
+            <div style={{ marginTop: "auto", padding: "20px" }}>
+                <button 
+                  onClick={() => signOut()}
+                  style={{ 
+                    width: "100%", 
+                    background: "transparent", 
+                    border: "1px solid #1c1c2e", 
+                    color: "#5a5a78", 
+                    padding: "8px", 
+                    borderRadius: "6px", 
+                    fontSize: "12px", 
+                    fontFamily: "monospace",
+                    cursor: "pointer",
+                    transition: "all 0.2s"
+                  }}
+                  onMouseOver={(e) => { e.target.style.color = "#ff6b47"; e.target.style.borderColor = "rgba(255,107,71,0.3)" }}
+                  onMouseOut={(e) => { e.target.style.color = "#5a5a78"; e.target.style.borderColor = "#1c1c2e" }}
+                >
+                  Cerrar sesión
+                </button>
+            </div>
         </div>
     )
 }

@@ -6,7 +6,7 @@ console.log('CLIENT_ID:', GOOGLE_CLIENT_ID ? '[DEFINED ✓]' : '[UNDEFINED ✗ �
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
 const META_TOKEN = import.meta.env.VITE_META_ACCESS_TOKEN
-const META_GRAPH = "https://graph.facebook.com/v21.0"
+const META_GRAPH = "https://graph.facebook.com/v22.0"
 
 // ─── STEPS ─────────────────────────────────────────────────────────────────────
 const STEPS = [
@@ -1102,7 +1102,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
 function LaunchStep({ brand, selectedFiles }) {
   const [stage, setStage] = useState(1);
   const [assetsConfig, setAssetsConfig] = useState(
-    selectedFiles.map(f => ({ ...f, adName: f.name ? f.name.replace(/\.[^/.]+$/, "") : `ad_${Math.random().toString(36).substring(7)}`, customThumbnail: "" }))
+    (selectedFiles || []).map(f => ({ ...f, adName: f.name ? f.name.replace(/\.[^/.]+$/, "") : `ad_${Math.random().toString(36).substring(7)}`, customThumbnail: "" }))
   );
 
   const [copyConfig, setCopyConfig] = useState({
@@ -1136,6 +1136,11 @@ function LaunchStep({ brand, selectedFiles }) {
   const [launchResults, setLaunchResults] = useState({});
   const [metaFetchError, setMetaFetchError] = useState(null);
 
+  const [fetchedPixels, setFetchedPixels] = useState([]);
+  const [selectedPixelId, setSelectedPixelId] = useState("");
+  const [selectedEvent, setSelectedEvent] = useState("PURCHASE");
+  const [pixelEvents, setPixelEvents] = useState(["PURCHASE", "LEAD", "SCHEDULE", "ADD_TO_CART", "INITIATE_CHECKOUT"]);
+
   useEffect(() => {
     // Pages
     if (!META_TOKEN) {
@@ -1145,7 +1150,7 @@ function LaunchStep({ brand, selectedFiles }) {
     setMetaFetchError(null);
 
     // If brand has a page ID, we use it first, but we still fetch to show options
-    fetch(`https://graph.facebook.com/v22.0/me/accounts?fields=id,name&access_token=${META_TOKEN}`)
+    fetch(`${META_GRAPH}/me/accounts?fields=id,name,access_token&access_token=${META_TOKEN}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) throw new Error(d.error.message);
@@ -1170,7 +1175,8 @@ function LaunchStep({ brand, selectedFiles }) {
       if (!brand?.instagramAccountId) setSelectedIgAccountId("");
       return;
     }
-    fetch(`https://graph.facebook.com/v22.0/${selectedPageId}/instagram_accounts?fields=id,username,profile_pic&access_token=${META_TOKEN}`)
+    const pageToken = pages.find(p => p.id === selectedPageId)?.access_token || META_TOKEN;
+    fetch(`${META_GRAPH}/${selectedPageId}/instagram_accounts?fields=id,username,profile_pic&access_token=${pageToken}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) {
@@ -1200,16 +1206,51 @@ function LaunchStep({ brand, selectedFiles }) {
     if (stage === 2 && campaignMode === "existing" && META_TOKEN) {
       const accountId = brand?.metaAccounts?.[0];
       if (accountId) {
-        fetch(`https://graph.facebook.com/v22.0/${accountId}/campaigns?fields=id,name,status,objective&access_token=${META_TOKEN}`)
+        fetch(`${META_GRAPH}/${accountId}/campaigns?fields=id,name,status,objective&access_token=${META_TOKEN}`)
           .then(r => r.json()).then(d => d.data && setFetchedCampaigns(d.data)).catch(() => { });
       }
     }
   }, [stage, campaignMode, brand]);
 
   useEffect(() => {
+    if (stage === 2 && META_TOKEN) {
+      const accountId = brand?.metaAccounts?.[0];
+      if (accountId) {
+        fetch(`${META_GRAPH}/${accountId}/adspixels?fields=id,name,last_fired_time&access_token=${META_TOKEN}`)
+          .then(r => r.json())
+          .then(d => {
+            if (d.data) {
+              setFetchedPixels(d.data);
+              if (d.data.length > 0 && !selectedPixelId) {
+                setSelectedPixelId(d.data[0].id);
+              }
+            }
+          })
+          .catch(e => console.error("Error fetching pixels:", e));
+      }
+    }
+  }, [stage, brand]);
+
+  useEffect(() => {
+    if (selectedPixelId && META_TOKEN) {
+      fetch(`${META_GRAPH}/${selectedPixelId}/stats?fields=event,count&access_token=${META_TOKEN}`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.data) {
+            const seenEvents = d.data.map(i => i.event);
+            const defaultEvents = ["PURCHASE", "LEAD", "SCHEDULE", "ADD_TO_CART", "INITIATE_CHECKOUT"];
+            const combined = [...new Set([...seenEvents, ...defaultEvents])];
+            setPixelEvents(combined);
+          }
+        })
+        .catch(e => console.error("Error fetching pixel events:", e));
+    }
+  }, [selectedPixelId]);
+
+  useEffect(() => {
     const cid = campaignMode === "existing" ? selectedCampaignId : null;
     if (stage === 2 && cid && (adSetMode === "existing" || newAdSet.sourceAdSetId || adSetMode === "multiple") && META_TOKEN) {
-      fetch(`https://graph.facebook.com/v22.0/${cid}/adsets?fields=id,name,status,daily_budget&access_token=${META_TOKEN}`)
+      fetch(`${META_GRAPH}/${cid}/adsets?fields=id,name,status,daily_budget&access_token=${META_TOKEN}`)
         .then(r => r.json()).then(d => d.data && setFetchedAdSets(d.data)).catch(() => { });
     }
   }, [stage, selectedCampaignId, campaignMode, adSetMode, newAdSet.sourceAdSetId]);
@@ -1261,11 +1302,24 @@ Evaluá concisamente:
       }
 
       if (adSetMode === "new") {
-        let payload = { name: newAdSet.name, campaign_id: activeCampaignId, daily_budget: Number(newAdSet.dailyBudgetOverride || newCampaign.dailyBudget) * 100, billing_event: "IMPRESSIONS", optimization_goal: "OFFSITE_CONVERSIONS", status: targetStatus, access_token: META_TOKEN };
+        let payload = {
+          name: newAdSet.name,
+          campaign_id: activeCampaignId,
+          daily_budget: Number(newAdSet.dailyBudgetOverride || newCampaign.dailyBudget) * 100,
+          billing_event: "IMPRESSIONS",
+          optimization_goal: "OFFSITE_CONVERSIONS",
+          status: targetStatus,
+          access_token: META_TOKEN,
+          promoted_object: { pixel_id: selectedPixelId, custom_event_type: selectedEvent }
+        };
         if (newAdSet.sourceAdSetId) {
           const src = await fetch(`${META_GRAPH}/${newAdSet.sourceAdSetId}?fields=targeting,promoted_object&access_token=${META_TOKEN}`).then(r => r.json());
           if (src.targeting) payload.targeting = src.targeting;
-          if (src.promoted_object) payload.promoted_object = src.promoted_object;
+          if (selectedPixelId) {
+            payload.promoted_object = { pixel_id: selectedPixelId, custom_event_type: selectedEvent };
+          } else if (src.promoted_object) {
+            payload.promoted_object = src.promoted_object;
+          }
         } else {
           payload.targeting = { geo_locations: { countries: ["AR"] } };
         }
@@ -1281,7 +1335,7 @@ Evaluá concisamente:
         try {
           let imageHash = null;
           let videoId = null;
-          const isVideo = asset.mimeType.startsWith("video/");
+          const isVideo = asset?.mimeType?.startsWith("video/") || false;
 
           if (asset.source === "Cuenta") {
             if (isVideo) videoId = asset.id;
@@ -1419,14 +1473,14 @@ Evaluá concisamente:
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div style={s.label}>1. ASSETS SELECCIONADOS ({assetsConfig.length})</div>
               {assetsConfig.map((ass, idx) => {
-                const isVideo = ass.mimeType.startsWith("video/");
+                const isVideo = ass?.mimeType?.startsWith("video/") || false;
                 return (
                   <div key={ass.id} style={{ display: "flex", gap: "12px", background: "#13131f", padding: "12px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
                     {/* Thumbnail */}
                     <div style={{ width: "80px", height: "80px", background: "#080810", borderRadius: "6px", overflow: "hidden", position: "relative", flexShrink: 0 }}>
                       <img src={ass.thumbnailLink || "https://placehold.co/80/080810/5a5a78?text=MEDIA"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       <div style={{ position: "absolute", bottom: "2px", right: "2px", background: "rgba(0,0,0,0.8)", padding: "1px 4px", fontSize: "8px", fontFamily: "monospace", borderRadius: "2px", color: "#fff" }}>
-                        {ass.source.toUpperCase()}
+                        {(ass?.source || "unknown").toUpperCase()}
                       </div>
                     </div>
                     {/* Config */}
@@ -1656,6 +1710,52 @@ Evaluá concisamente:
                 </div>
               )}
             </div>
+
+            {/* Pixel & Event Selection */}
+            <hr style={{ border: "none", borderTop: "1px solid #1c1c2e" }} />
+            <div>
+              <div style={s.label}>3. CONVERSIÓN (PIXEL & EVENTO)</div>
+              <div style={{ background: "#13131f", padding: "16px", borderRadius: "8px", border: "1px solid #1c1c2e", display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  {/* Pixel Selection */}
+                  <div>
+                    <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>PIXEL DE META</div>
+                    <select value={selectedPixelId} onChange={e => setSelectedPixelId(e.target.value)} style={{ ...s.input, appearance: "none" }}>
+                      {fetchedPixels.length === 0 && <option value="">No se encontraron pixels</option>}
+                      {fetchedPixels.map(px => (
+                        <option key={px.id} value={px.id}>{px.name} ({px.id})</option>
+                      ))}
+                    </select>
+                    {selectedPixelId && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px" }}>
+                        <div style={{
+                          width: "8px", height: "8px", borderRadius: "50%",
+                          background: "#47ffc8", boxShadow: "0 0 8px #47ffc880",
+                          animation: "pulse 2s infinite"
+                        }} />
+                        <div style={{ fontSize: "10px", fontFamily: "monospace", color: "#47ffc8" }}>
+                          Pixel Activo · Última actividad: {
+                            fetchedPixels.find(px => px.id === selectedPixelId)?.last_fired_time
+                              ? new Date(fetchedPixels.find(px => px.id === selectedPixelId).last_fired_time).toLocaleString()
+                              : "Recientemente"
+                          }
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Event Selection */}
+                  <div>
+                    <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#5a5a78", marginBottom: "4px" }}>EVENTO DE CONVERSIÓN</div>
+                    <select value={selectedEvent} onChange={e => setSelectedEvent(e.target.value)} style={{ ...s.input, appearance: "none" }}>
+                      {pixelEvents.map(ev => (
+                        <option key={ev} value={ev}>{ev.replace(/_/g, " ")}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1809,7 +1909,7 @@ export default function AdsTab({ brand }) {
       })
     }
     if (window.gapi) { initGapi() }
-    else {
+    else if (!document.querySelector('script[src="https://apis.google.com/js/api.js"]')) {
       const gapiScript = document.createElement("script")
       gapiScript.src = "https://apis.google.com/js/api.js"
       gapiScript.onload = initGapi
@@ -1829,7 +1929,7 @@ export default function AdsTab({ brand }) {
       setGisLoaded(true)
     }
     if (window.google?.accounts) { initGis() }
-    else {
+    else if (!document.querySelector('script[src="https://accounts.google.com/gsi/client"]')) {
       const gisScript = document.createElement("script")
       gisScript.src = "https://accounts.google.com/gsi/client"
       gisScript.onload = initGis
