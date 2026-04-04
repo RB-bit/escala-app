@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react"
-import { BRANDS, QUICK_PROMPTS, TN_BASE, TN_HEADERS } from "./data/brands"
+import { BRANDS, QUICK_PROMPTS } from "./data/brands"
 import Topbar from "./components/Topbar"
 import Sidebar from "./components/Sidebar"
 import DashboardTab from "./components/tabs/DashboardTab"
@@ -22,14 +22,6 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false)
   const messagesEndRef = useRef(null)
 
-  // ── Tienda Nube state ──
-  const [tnLoading, setTnLoading] = useState(false)
-  const [tnError, setTnError] = useState(null)
-  const [tnOrders, setTnOrders] = useState([])
-  const [tnProducts, setTnProducts] = useState([])
-  const [tnStore, setTnStore] = useState(null)
-  const [tnFetched, setTnFetched] = useState(false)
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, isTyping])
@@ -43,45 +35,6 @@ export default function App() {
     if (brand === null) setActiveTab("consolidated")
     else if (activeTab === "consolidated") setActiveTab("dashboard")
   }
-
-  // ── Tienda Nube fetch ──
-  const fetchTiendaNube = async () => {
-    if (tnLoading) return
-    setTnLoading(true)
-    setTnError(null)
-    try {
-      const [ordersRes, productsRes, storeRes] = await Promise.all([
-        fetch(`${TN_BASE}/orders?per_page=20&fields=id,number,customer,total,payment_status,created_at`, { headers: TN_HEADERS }),
-        fetch(`${TN_BASE}/products?per_page=50&fields=id,name,price,stock_management,variants`, { headers: TN_HEADERS }),
-        fetch(`${TN_BASE}/store`, { headers: TN_HEADERS }),
-      ])
-
-      if (!ordersRes.ok) throw new Error(`Orders API: ${ordersRes.status}`)
-      if (!productsRes.ok) throw new Error(`Products API: ${productsRes.status}`)
-      if (!storeRes.ok) throw new Error(`Store API: ${storeRes.status}`)
-
-      const [orders, products, store] = await Promise.all([
-        ordersRes.json(),
-        productsRes.json(),
-        storeRes.json(),
-      ])
-
-      setTnOrders(Array.isArray(orders) ? orders : [])
-      setTnProducts(Array.isArray(products) ? products : [])
-      setTnStore(store)
-      setTnFetched(true)
-    } catch (err) {
-      setTnError(err.message)
-    } finally {
-      setTnLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    if (activeTab === "tiendanube" && !tnFetched && !tnLoading) {
-      fetchTiendaNube()
-    }
-  }, [activeTab])
 
   const sendMessage = async (text) => {
     const msg = text || input
@@ -117,7 +70,7 @@ export default function App() {
     { id: "dashboard", icon: "⚡", label: "Dashboard" },
     { id: "campaigns", icon: "📈", label: "Campañas", badge: isConsolidated ? null : String(campaigns.filter(c => c.status === "active").length) },
     { id: "ads", icon: "🎯", label: "Creación de Ads" },
-    { id: "tiendanube", icon: "🛍️", label: "Tienda Nube", badge: tnFetched ? String(tnOrders.length) : null },
+    { id: "tiendanube", icon: "🛍️", label: "Tienda Nube" },
     { id: "connections", icon: "🔗", label: "Conexiones", badge: isConsolidated ? null : `${connections.filter(c => c.status === "connected").length}/${connections.length}` },
     { id: "progress", icon: "🗺️", label: "Mi Progreso" },
     { id: "chat", icon: "🤖", label: "Coach IA" },
@@ -211,15 +164,7 @@ export default function App() {
         {activeTab === "dashboard" && !isConsolidated && <DashboardTab selectedBrand={selectedBrand} />}
 
         {activeTab === "tiendanube" && !isConsolidated && (
-          <TiendaNubeTab
-            tnLoading={tnLoading}
-            tnError={tnError}
-            tnOrders={tnOrders}
-            tnProducts={tnProducts}
-            tnStore={tnStore}
-            tnFetched={tnFetched}
-            fetchTiendaNube={fetchTiendaNube}
-          />
+          <TiendaNubeTab storeId={selectedBrand?.tiendaNubeStores?.[0]?.tn_store_id} />
         )}
 
         {activeTab === "campaigns" && !isConsolidated && <CampaignsTab selectedBrand={selectedBrand} campaigns={campaigns} />}

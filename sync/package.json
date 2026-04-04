@@ -1,0 +1,14 @@
+{
+  "name": "escala-sync",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Tienda Nube sync worker for ESCALA — polls TN API and writes to Supabase",
+  "scripts": {
+    "sync": "node worker.js",
+    "sync:full": "node worker.js --full"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "p-limit": "^6.2.0"
+  }
+}

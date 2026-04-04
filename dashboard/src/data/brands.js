@@ -111,11 +111,7 @@ export const QUICK_PROMPTS = [
     "Generá reporte semanal",
 ]
 
-export const TN_TOKEN = import.meta.env.VITE_TN_TOKEN
-export const TN_STORE_ID = "2091475"
-export const TN_BASE = `https://api.tiendanube.com/2025-03/${TN_STORE_ID}`
-export const TN_HEADERS = {
-    "Authentication": `bearer ${TN_TOKEN}`,
-    "User-Agent": "ESCALA (hola@escala.app)",
-    "Content-Type": "application/json",
-}
+// Credenciales de Tienda Nube eliminadas del frontend.
+// Los datos se leen desde Supabase (pre-sincronizados por el worker en /sync/).
+// Para conectar una tienda, insertá en la tabla `stores` de Supabase:
+//   INSERT INTO stores (brand_id, tn_store_id, access_token) VALUES ('soy-rica', '2091475', 'token...')

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>app.escala.tiendanube-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/rodboss/.nvm/versions/node/v20.20.0/bin/node</string>
+        <string>/Users/rodboss/conductor/workspaces/APP/tokyo/sync/worker.js</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/rodboss/conductor/workspaces/APP/tokyo/sync</string>
+
+    <!-- Correr cada 5 minutos (300 segundos) -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/escala-sync.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/escala-sync-error.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/rodboss</string>
+        <key>PATH</key>
+        <string>/Users/rodboss/.nvm/versions/node/v20.20.0/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
