@@ -22,11 +22,13 @@ async function tnFetch(storeId, accessToken, path, params = {}) {
  * @param {string} endDate   - YYYY-MM-DD
  */
 export async function fetchStoreRevenue(storeId, accessToken, startDate, endDate) {
-  const min = startDate
-  // TN interpreta created_at_max como exclusivo (< fecha), por eso sumamos 1 día
-  const maxDate = new Date(endDate)
-  maxDate.setDate(maxDate.getDate() + 1)
-  const max = maxDate.toISOString().slice(0, 10)
+  // Argentina es UTC-3 sin DST. "2026-04-04" debe mapear a 2026-04-04T03:00:00Z (medianoche ART)
+  const toARTMidnightUTC = (dateStr) => `${dateStr}T03:00:00.000Z`
+  const min = toARTMidnightUTC(startDate)
+  // TN interpreta created_at_max como exclusivo (< fecha), sumamos 1 día en UTC
+  const maxDate = new Date(`${endDate}T03:00:00.000Z`)
+  maxDate.setUTCDate(maxDate.getUTCDate() + 1)
+  const max = maxDate.toISOString()
 
   let revenue = 0
   let orders  = 0
@@ -46,7 +48,7 @@ export async function fetchStoreRevenue(storeId, accessToken, startDate, endDate
     data.forEach(order => {
       // Sumar órdenes pagadas o autorizadas (tarjeta queda en 'authorized')
       const ps = order.payment_status
-      if (ps === 'paid' || ps === 'authorized') {
+      if (ps === 'paid') {
         revenue += parseFloat(order.total || 0)
         orders++
       }

@@ -2,8 +2,8 @@ import { TN_STORE_ID } from "../../data/brands"
 
 export default function TiendaNubeTab({ tnLoading, tnError, tnOrders, tnProducts, tnStore, tnFetched, fetchTiendaNube }) {
     // ── Derived metrics ──
-    const totalOrders = tnOrders.length
-    const totalRevenue = tnOrders.reduce((s, o) => s + parseFloat(o.total || 0), 0)
+    const totalOrders = tnOrders.filter(o => o.payment_status === 'paid').length
+    const totalRevenue = tnOrders.filter(o => o.payment_status === 'paid').reduce((s, o) => s + parseFloat(o.total || 0), 0)
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0
 
     // Products with stock

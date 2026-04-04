@@ -14,7 +14,9 @@ const PRESETS = [
 /** Returns { label, startDate, endDate } for the active selection */
 export function getDateRange(preset, customStart, customEnd) {
   const now = new Date()
-  const fmt = d => d.toISOString().slice(0, 10)
+  // Argentina es UTC-3 (sin DST)
+  const toART = d => new Date(d.getTime() - 3 * 60 * 60 * 1000)
+  const fmt = d => toART(d).toISOString().slice(0, 10)
 
   switch (preset) {
     case "today":
