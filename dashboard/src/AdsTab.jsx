@@ -1909,7 +1909,7 @@ export default function AdsTab({ brand }) {
       })
     }
     if (window.gapi) { initGapi() }
-    else {
+    else if (!document.querySelector('script[src="https://apis.google.com/js/api.js"]')) {
       const gapiScript = document.createElement("script")
       gapiScript.src = "https://apis.google.com/js/api.js"
       gapiScript.onload = initGapi
@@ -1929,7 +1929,7 @@ export default function AdsTab({ brand }) {
       setGisLoaded(true)
     }
     if (window.google?.accounts) { initGis() }
-    else {
+    else if (!document.querySelector('script[src="https://accounts.google.com/gsi/client"]')) {
       const gisScript = document.createElement("script")
       gisScript.src = "https://accounts.google.com/gsi/client"
       gisScript.onload = initGis

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { BRANDS as STATIC_BRANDS, QUICK_PROMPTS, TN_BASE, TN_HEADERS } from "./data/brands"
 import { getBrands, getBrandsWithConnections, getBrandWithConnection, createBrand } from "./lib/brandsService"
 import { getSession, onAuthChange, signOut } from "./lib/auth"
@@ -25,6 +25,7 @@ export default function App() {
 
   const [brands, setBrands] = useState([])
   const [brandsLoading, setBrandsLoading] = useState(true)
+  const initialLoadDone = useRef(false)
   const [session, setSession] = useState(undefined) // undefined = checking, null = no session
   const [activeTab, setActiveTab] = useState("dashboard")
   const [selectedBrand, setSelectedBrand] = useState(null)
@@ -48,26 +49,27 @@ export default function App() {
   const messagesEndRef = useRef(null)
 
   // ── Brands fetch ──
-  const fetchBrands = async () => {
-    setBrandsLoading(true)
+  const fetchBrands = useCallback(async () => {
+    const isFirstLoad = !initialLoadDone.current
+    if (isFirstLoad) setBrandsLoading(true)
     try {
-      // Load brands WITH meta_connections so ClientsTab can call the Meta API per account
       const data = await getBrandsWithConnections()
       if (data && data.length > 0) {
         setBrands(data)
-        setSelectedBrand(null) // Start in consolidated view
+        if (isFirstLoad) setSelectedBrand(null)
       } else {
         setBrands(STATIC_BRANDS)
-        setSelectedBrand(null)
+        if (isFirstLoad) setSelectedBrand(null)
       }
     } catch (err) {
       console.error("Error fetching brands from Supabase, falling back:", err)
       setBrands(STATIC_BRANDS)
-      setSelectedBrand(null)
+      if (isFirstLoad) setSelectedBrand(null)
     } finally {
+      initialLoadDone.current = true
       setBrandsLoading(false)
     }
-  }
+  }, [])
 
   const handleCreateBrand = async (e) => {
     e.preventDefault()
@@ -132,8 +134,12 @@ export default function App() {
       setSession(s || null)
     })
 
-    // 2. Auth changes listener
-    const subscription = onAuthChange((s) => setSession(s))
+    // 2. Auth changes listener — only react to sign-in/sign-out, not token refreshes
+    const subscription = onAuthChange((s, event) => {
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        setSession(s)
+      }
+    })
 
     return () => {
       subscription?.unsubscribe()
@@ -144,7 +150,7 @@ export default function App() {
     if (session) {
       fetchBrands()
     }
-  }, [session])
+  }, [session, fetchBrands])
 
   // ── Tienda Nube state ──
   const [tnLoading, setTnLoading] = useState(false)
@@ -178,21 +184,23 @@ export default function App() {
     { name: "Claude AI", icon: "🤖", status: "connected", detail: "Claude Sonnet 4.6 · Activo", action: "Configurar" },
   ]
 
+  const [brandDetailLoading, setBrandDetailLoading] = useState(false)
+
   const selectBrand = async (brand) => {
     if (brand === null) {
       setSelectedBrand(null)
       setActiveTab("consolidated")
     } else {
-      setBrandsLoading(true)
+      setBrandDetailLoading(true)
+      setSelectedBrand(brand)
+      if (activeTab === "consolidated") setActiveTab("dashboard")
       try {
         const fullBrand = await getBrandWithConnection(brand.id)
         setSelectedBrand(fullBrand)
-        if (activeTab === "consolidated") setActiveTab("dashboard")
       } catch (err) {
         console.error("Error loading brand details:", err)
-        setSelectedBrand(brand)
       } finally {
-        setBrandsLoading(false)
+        setBrandDetailLoading(false)
       }
     }
   }
@@ -304,7 +312,7 @@ export default function App() {
     return <Login />
   }
 
-  if (brandsLoading) {
+  if (brandsLoading && brands.length === 0) {
     return (
       <div style={{ height: "100vh", background: "#080810", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "20px" }}>
         <div style={{ fontSize: "40px" }}>⚡</div>
@@ -405,9 +413,11 @@ export default function App() {
           </>
         )}
 
-        {activeTab === "dashboard" && !isConsolidated && <DashboardTab selectedBrand={selectedBrand} datePreset={datePreset} customStart={customStart} customEnd={customEnd} />}
+        <div style={{ display: activeTab === "dashboard" && !isConsolidated ? "flex" : "none", flexDirection: "column", gap: "20px" }}>
+          <DashboardTab selectedBrand={selectedBrand} datePreset={datePreset} customStart={customStart} customEnd={customEnd} />
+        </div>
 
-        {activeTab === "tiendanube" && !isConsolidated && (
+        <div style={{ display: activeTab === "tiendanube" && !isConsolidated ? "flex" : "none", flexDirection: "column", gap: "20px" }}>
           <TiendaNubeTab
             tnLoading={tnLoading}
             tnError={tnError}
@@ -417,17 +427,25 @@ export default function App() {
             tnFetched={tnFetched}
             fetchTiendaNube={fetchTiendaNube}
           />
-        )}
+        </div>
 
-        {activeTab === "campaigns" && !isConsolidated && <CampaignsTab selectedBrand={selectedBrand} campaigns={campaigns} datePreset={datePreset} customStart={customStart} customEnd={customEnd} />}
+        <div style={{ display: activeTab === "campaigns" && !isConsolidated ? "flex" : "none", flexDirection: "column", gap: "20px" }}>
+          <CampaignsTab selectedBrand={selectedBrand} campaigns={campaigns} datePreset={datePreset} customStart={customStart} customEnd={customEnd} />
+        </div>
 
-        {activeTab === "ads" && !isConsolidated && <AdsTab brand={selectedBrand} />}
+        <div style={{ display: activeTab === "ads" && !isConsolidated ? "flex" : "none", flexDirection: "column", gap: "20px" }}>
+          <AdsTab brand={selectedBrand} />
+        </div>
 
-         {activeTab === "connections" && !isConsolidated && <ConnectionsTab selectedBrand={selectedBrand} connections={connections} refreshBrands={fetchBrands} />}
+        <div style={{ display: activeTab === "connections" && !isConsolidated ? "flex" : "none", flexDirection: "column", gap: "20px" }}>
+          <ConnectionsTab selectedBrand={selectedBrand} connections={connections} refreshBrands={fetchBrands} />
+        </div>
 
-        {activeTab === "progress" && !isConsolidated && <ProgressTab />}
+        <div style={{ display: activeTab === "progress" && !isConsolidated ? "flex" : "none", flexDirection: "column", gap: "20px" }}>
+          <ProgressTab />
+        </div>
 
-        {activeTab === "chat" && !isConsolidated && (
+        <div style={{ display: activeTab === "chat" && !isConsolidated ? "flex" : "none", flexDirection: "column", gap: "20px" }}>
           <CoachTab
             selectedBrand={selectedBrand}
             messages={messages}
@@ -437,7 +455,7 @@ export default function App() {
             sendMessage={sendMessage}
             messagesEndRef={messagesEndRef}
           />
-        )}
+        </div>
 
       </div>
 
