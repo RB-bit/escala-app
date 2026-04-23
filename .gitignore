@@ -1,2 +1,13 @@
 shared/auth/.env
 dashboard/.env.local
+
+node_modules/
+dashboard/node_modules/
+
+dashboard/dist/
+dashboard/.vite/
+
+.claude/
+.vscode/
+.DS_Store
+*.log
