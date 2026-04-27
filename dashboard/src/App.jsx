@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react"
 import { BRANDS as STATIC_BRANDS, QUICK_PROMPTS, TN_BASE, TN_HEADERS } from "./data/brands"
 import { getBrands, getBrandsWithConnections, getBrandWithConnection, createBrand } from "./lib/brandsService"
 import { getSession, onAuthChange, signOut } from "./lib/auth"
+import { getMyRole } from "./lib/rolesService"
 import Login from "./components/Login"
 import Topbar from "./components/Topbar"
 import Sidebar from "./components/Sidebar"
@@ -195,8 +196,11 @@ export default function App() {
       setSelectedBrand(brand)
       if (activeTab === "consolidated") setActiveTab("dashboard")
       try {
-        const fullBrand = await getBrandWithConnection(brand.id)
-        setSelectedBrand(fullBrand)
+        const [fullBrand, myRole] = await Promise.all([
+          getBrandWithConnection(brand.id),
+          getMyRole(brand.id),
+        ])
+        setSelectedBrand({ ...fullBrand, myRole })
       } catch (err) {
         console.error("Error loading brand details:", err)
       } finally {
@@ -324,7 +328,7 @@ export default function App() {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gridTemplateRows: "56px 1fr", height: "100vh", background: "#080810", color: "#f0f0f8", fontFamily: "'Bricolage Grotesque',sans-serif", overflow: "hidden" }}>
 
-      <Topbar selectedBrand={selectedBrand} brands={brands} />
+      <Topbar selectedBrand={selectedBrand} brands={brands} session={session} />
 
       <Sidebar
         selectedBrand={selectedBrand}

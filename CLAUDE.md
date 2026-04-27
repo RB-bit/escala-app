@@ -297,3 +297,20 @@ VITE_TN_STORE_ID=2091475
 - SQL supabase_setup.sql generado con las 4 brands iniciales (Soy Rica, Cavaliery, MamaYoQuiero, Onafit)
 - Loading screen con micro-animaciones agregado al mount de la app
 - Botón "Nueva marca" + modal en tab Conexiones
+
+### Sesión 5 — 26/04/2026
+- F-03 implementado: Auth con Magic Link (sin Google Cloud) + roles por brand
+- `auth.js`: signInWithMagicLink reemplaza email/password; agregado getUser
+- `Login.jsx` reescrito: input de email + envío de link mágico, pantalla "revisá tu mail"
+- `Topbar.jsx`: avatar + dropdown con email y botón "Cerrar sesión"
+- Migración SQL en `dashboard/src/lib/migrations/002_user_roles.sql`:
+  - tabla `user_roles` (user_id, email, brand_id, role, invited_by) con unique(email, brand_id)
+  - funciones `current_user_role(brand_id)` y `is_brand_member(brand_id)` (security definer)
+  - trigger `link_invitations_to_new_user`: matchea email con user_id al primer login
+  - trigger `assign_brand_owner_on_insert`: el creador del brand queda owner automáticamente
+  - RLS activado en `brands`, `meta_connections`, `tiendanube_connections` y `user_roles`
+  - SEED final con placeholder `TU_EMAIL_AQUI` (reemplazar antes de correr)
+- `rolesService.js`: getMyRole (RPC), getMembers, inviteMember, updateMemberRole, removeMember
+- `App.jsx`: inyecta `myRole` en selectedBrand al cargar detalle
+- `TeamSection.jsx` nuevo: lista miembros + modal invitar (rol Editor/Solo ver). Owner-only para invitar/editar/remover. Render dentro de ConnectionsTab.
+- Build OK. Pendiente del usuario: correr la migración SQL en Supabase y deshabilitar "Confirm email" en Auth settings antes del primer login.

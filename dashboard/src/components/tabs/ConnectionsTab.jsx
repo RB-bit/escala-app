@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { createBrand } from "../../lib/brandsService"
+import TeamSection from "../TeamSection"
 
 export default function ConnectionsTab({ selectedBrand, connections, refreshBrands }) {
     const [showModal, setShowModal] = useState(false)
@@ -46,6 +47,8 @@ export default function ConnectionsTab({ selectedBrand, connections, refreshBran
                     </div>
                 ))}
             </div>
+
+            <TeamSection brand={selectedBrand} />
 
             {showModal && (
                 <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
