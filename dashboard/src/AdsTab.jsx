@@ -1981,6 +1981,7 @@ export default function AdsTab({ brand }) {
 
     // ── GIS ──
     const initGis = () => {
+      if (!GOOGLE_CLIENT_ID) return // Google Drive no configurado — skip init
       tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
         scope: DRIVE_SCOPE,
@@ -1991,7 +1992,8 @@ export default function AdsTab({ brand }) {
       })
       setGisLoaded(true)
     }
-    if (window.google?.accounts) { initGis() }
+    if (!GOOGLE_CLIENT_ID) { /* nada que hacer */ }
+    else if (window.google?.accounts) { initGis() }
     else if (!document.querySelector('script[src="https://accounts.google.com/gsi/client"]')) {
       const gisScript = document.createElement("script")
       gisScript.src = "https://accounts.google.com/gsi/client"

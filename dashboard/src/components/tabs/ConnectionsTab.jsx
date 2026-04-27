@@ -22,6 +22,8 @@ export default function ConnectionsTab({ selectedBrand, connections, refreshBran
         }
     }
 
+    if (!selectedBrand) return null
+
     return (
         <>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>

@@ -1,4 +1,5 @@
 export default function CampaignsTab({ selectedBrand, campaigns }) {
+    if (!selectedBrand) return null
     return (
         <>
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>

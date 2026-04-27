@@ -20,6 +20,13 @@ export default function TeamSection({ brand }) {
   const [inviting, setInviting] = useState(false)
   const [inviteError, setInviteError] = useState(null)
 
+  const closeInvite = () => {
+    setShowInvite(false)
+    setInviteEmail("")
+    setInviteRole("editor")
+    setInviteError(null)
+  }
+
   const fetchMembers = async () => {
     if (!brand?.id) return
     setLoading(true)
@@ -45,9 +52,7 @@ export default function TeamSection({ brand }) {
     setInviteError(null)
     try {
       await inviteMember(brand.id, inviteEmail, inviteRole)
-      setInviteEmail("")
-      setInviteRole("editor")
-      setShowInvite(false)
+      closeInvite()
       fetchMembers()
     } catch (err) {
       setInviteError(err.message || "No se pudo invitar")
@@ -204,7 +209,7 @@ export default function TeamSection({ brand }) {
 
       {showInvite && (
         <div
-          onClick={() => !inviting && setShowInvite(false)}
+          onClick={() => !inviting && closeInvite()}
           style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100 }}
         >
           <form
@@ -276,7 +281,7 @@ export default function TeamSection({ brand }) {
             <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
               <button
                 type="button"
-                onClick={() => setShowInvite(false)}
+                onClick={closeInvite}
                 disabled={inviting}
                 style={{ flex: 1, background: "transparent", border: "1px solid #252538", color: "#5a5a78", borderRadius: "6px", padding: "10px", fontWeight: "600", cursor: "pointer" }}
               >

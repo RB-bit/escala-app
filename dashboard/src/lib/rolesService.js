@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 
 const VALID_ROLES = ['owner', 'editor', 'viewer']
+const APP_URL = import.meta.env.VITE_APP_URL || 'https://escala.mangotango.com.ar'
 
 /**
  * Get current user's role for a brand. Returns 'owner' | 'editor' | 'viewer' | null.
@@ -71,6 +72,13 @@ export async function inviteMember(brandId, email, role) {
     if (error.code === '23505') throw new Error('Ese email ya está invitado a esta marca.')
     throw error
   }
+
+  // Disparar magic link al invitado para que reciba el mail con el acceso
+  await supabase.auth.signInWithOtp({
+    email: cleanEmail,
+    options: { emailRedirectTo: APP_URL, shouldCreateUser: true },
+  })
+
   return data
 }
 

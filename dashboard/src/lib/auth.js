@@ -2,7 +2,7 @@ import { supabase } from './supabase'
 
 /**
  * Send a magic link to the user's email.
- * The user clicks the link and is signed in automatically.
+ * Used for first login (set password) and password recovery.
  */
 export async function signInWithMagicLink(email) {
   const { error } = await supabase.auth.signInWithOtp({
@@ -13,6 +13,36 @@ export async function signInWithMagicLink(email) {
     },
   })
   if (error) throw error
+}
+
+/**
+ * Sign in with email + password. Used for everyday login.
+ */
+export async function signInWithPassword(email, password) {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error) throw error
+  return data
+}
+
+/**
+ * Set the user's password. Marks user_metadata.has_password = true so we know
+ * the user has finished onboarding and can use email+password from now on.
+ */
+export async function setPassword(password) {
+  const { data, error } = await supabase.auth.updateUser({
+    password,
+    data: { has_password: true },
+  })
+  if (error) throw error
+  return data
+}
+
+/**
+ * Whether the given session corresponds to a user that already set a password.
+ * Falsy means we should force the "create password" screen.
+ */
+export function hasPassword(session) {
+  return Boolean(session?.user?.user_metadata?.has_password)
 }
 
 export async function signOut() {

@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { BRANDS as STATIC_BRANDS, QUICK_PROMPTS, TN_BASE, TN_HEADERS } from "./data/brands"
 import { getBrands, getBrandsWithConnections, getBrandWithConnection, createBrand } from "./lib/brandsService"
-import { getSession, onAuthChange, signOut } from "./lib/auth"
+import { getSession, onAuthChange, signOut, hasPassword } from "./lib/auth"
 import { getMyRole } from "./lib/rolesService"
 import Login from "./components/Login"
+import SetPassword from "./components/SetPassword"
 import Topbar from "./components/Topbar"
 import Sidebar from "./components/Sidebar"
 import DashboardTab from "./components/tabs/DashboardTab"
@@ -136,9 +137,9 @@ export default function App() {
       setSession(s || null)
     })
 
-    // 2. Auth changes listener — only react to sign-in/sign-out, not token refreshes
+    // 2. Auth changes listener — sign-in/out + USER_UPDATED (so setPassword refreshes the gate)
     const subscription = onAuthChange((s, event) => {
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
         setSession(s)
       }
     })
@@ -320,6 +321,10 @@ export default function App() {
 
   if (!session) {
     return <Login />
+  }
+
+  if (!hasPassword(session)) {
+    return <SetPassword email={session.user?.email} />
   }
 
   if (brandsLoading && brands.length === 0) {

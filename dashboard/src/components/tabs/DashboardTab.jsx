@@ -1,6 +1,7 @@
 import { BRANDS } from "../../data/brands"
 
 export default function DashboardTab({ selectedBrand }) {
+    if (!selectedBrand) return null
     return (
         <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>

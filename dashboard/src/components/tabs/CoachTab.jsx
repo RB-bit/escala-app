@@ -1,6 +1,7 @@
 import { QUICK_PROMPTS } from "../../data/brands"
 
 export default function CoachTab({ selectedBrand, messages, isTyping, input, setInput, sendMessage, messagesEndRef }) {
+    if (!selectedBrand) return null
     return (
         <>
             <div style={{ fontSize: "22px", fontWeight: "800", letterSpacing: "-0.02em" }}>Coach IA</div>
