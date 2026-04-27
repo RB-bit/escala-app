@@ -47,6 +47,7 @@ export default function App() {
     }
   }
   const messagesEndRef = useRef(null)
+  const sessionUserIdRef = useRef(null)
 
   // ── Brands fetch ──
   const fetchBrands = useCallback(async () => {
@@ -147,8 +148,13 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (session) {
+    const userId = session?.user?.id ?? null
+    if (session && userId !== sessionUserIdRef.current) {
+      sessionUserIdRef.current = userId
       fetchBrands()
+    }
+    if (!session) {
+      sessionUserIdRef.current = null
     }
   }, [session, fetchBrands])
 

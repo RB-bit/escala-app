@@ -185,8 +185,8 @@ VITE_TN_STORE_ID=2091475
 - **F-01** ✅ Meta Ads análisis + Coach IA
 - **F-02** ✅ Tienda Nube dashboard (órdenes, productos, stock, health score)
 - **F-03** 🔜 **Sistema de usuarios y permisos** (Owner/Editor/Viewer por proyecto) ← PRÓXIMO
-- **F-04** 🔜 **Google Drive → Meta Ads uploader** (Drive explorer + subida de imágenes/videos/reels)
-- **F-05** 🔜 Seteo de objetivos por proyecto (revenue, ROAS target, periodo)
+- **F-04** 🔜 **Objetivos por proyecto — Sistema de Tests** (registro de tests de ads, producto y web · hit rate · ads ganadores · evaluación 3–7 días)
+- **F-05** 🔜 **Google Drive → Meta Ads uploader** (Drive explorer + subida de imágenes/videos/reels)
 
 ### FASE 02 · Core Intelligence · $1M → $10M ARS
 - **F-06** 🔜 Tab "Creación de Ads" con flujo de 4 pasos (Research → Roadmap → Assets → Launch)
@@ -236,7 +236,8 @@ VITE_TN_STORE_ID=2091475
 - [ ] Decidir: datos de Meta viven en brands (actual) o en meta_connections (original) — unificar antes del Prompt 3
 - [ ] Prompt 2: Auth con Supabase (Login.jsx + auth gate)
 - [ ] Prompt 3: OAuth flow Meta desde la UI (MetaConnectModal)
-- [ ] F-04: Google Drive + uploader a Meta
+- [ ] F-04: Sistema de Tests (tab Tests por proyecto, tablas tests + winning_ads en Supabase)
+- [ ] F-05: Google Drive + uploader a Meta
 
 ---
 
