@@ -7,7 +7,12 @@ dashboard/node_modules/
 dashboard/dist/
 dashboard/.vite/
 
-.claude/
+# Claude Code: compartimos commands/skills/agents/rules; ignoramos solo lo personal
+.claude/settings.local.json
+CLAUDE.local.md
 .vscode/
 .DS_Store
 *.log
+
+# Migraciones SQL pre-rellenadas con datos personales (no commitear)
+*.PERSONAL.sql
