@@ -539,7 +539,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
 
     try {
       if (newSource === "cuenta") {
-        const accountId = brand?.metaAccounts?.[0]
+        const accountId = brand?.meta_connections?.[0]?.ad_account_id
         if (!accountId) { setMetaError("Esta marca no tiene cuenta Meta configurada."); setMetaLoading(false); return }
 
         const imgParams = new URLSearchParams({
@@ -578,7 +578,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
         setMetaHasMore(!!(imgRes.paging?.next || vidRes.paging?.next))
 
       } else if (newSource === "facebook") {
-        const fbId = brand?.facebookPageId
+        const fbId = brand?.meta_connections?.[0]?.facebook_page_id
         if (!fbId || fbId.includes("placeholder")) { setMetaError("Esta marca no tiene un Facebook Page ID configurado todavía."); setMetaLoading(false); return }
 
         const params = new URLSearchParams({
@@ -606,7 +606,7 @@ function AssetsStep({ brand, onSelectFiles, signedIn, setSignedIn, scriptsReady,
         setMetaHasMore(!!res.paging?.next)
 
       } else if (newSource === "instagram") {
-        const igId = brand?.instagramAccountId
+        const igId = brand?.meta_connections?.[0]?.instagram_account_id
         if (!igId || igId.includes("placeholder")) { setMetaError("Esta marca no tiene un Instagram Account ID configurado todavía."); setMetaLoading(false); return }
 
         const params = new URLSearchParams({
@@ -1123,10 +1123,10 @@ function LaunchStep({ brand, selectedFiles }) {
   const [assetAdSets, setAssetAdSets] = useState({});
   const [fetchedAdSets, setFetchedAdSets] = useState([]);
 
-  const [selectedPageId, setSelectedPageId] = useState(brand?.facebookPageId || "");
+  const [selectedPageId, setSelectedPageId] = useState(brand?.meta_connections?.[0]?.facebook_page_id || "");
   const [pages, setPages] = useState([]);
 
-  const [selectedIgAccountId, setSelectedIgAccountId] = useState(brand?.instagramAccountId || "");
+  const [selectedIgAccountId, setSelectedIgAccountId] = useState(brand?.meta_connections?.[0]?.instagram_account_id || "");
   const [igAccounts, setIgAccounts] = useState([]);
 
   const [claudeReview, setClaudeReview] = useState(null);
@@ -1158,7 +1158,7 @@ function LaunchStep({ brand, selectedFiles }) {
           setPages(d.data);
           // Auto-select priority: 1. existing selectedPageId, 2. brand setting, 3. first from list
           if (!selectedPageId) {
-            if (brand?.facebookPageId) setSelectedPageId(brand.facebookPageId);
+            if (brand?.meta_connections?.[0]?.facebook_page_id) setSelectedPageId(brand.meta_connections[0].facebook_page_id);
             else if (d.data.length) setSelectedPageId(d.data[0].id);
           }
         }
@@ -1172,7 +1172,7 @@ function LaunchStep({ brand, selectedFiles }) {
   useEffect(() => {
     if (!selectedPageId || !META_TOKEN) {
       setIgAccounts([]);
-      if (!brand?.instagramAccountId) setSelectedIgAccountId("");
+      if (!brand?.meta_connections?.[0]?.instagram_account_id) setSelectedIgAccountId("");
       return;
     }
     const pageToken = pages.find(p => p.id === selectedPageId)?.access_token || META_TOKEN;
@@ -1180,31 +1180,48 @@ function LaunchStep({ brand, selectedFiles }) {
       .then(r => r.json())
       .then(d => {
         if (d.error) {
-          // Some pages might not have IG accounts linked, don't show as fatal error unless it's a real API failure
-          setIgAccounts([]);
-          setSelectedIgAccountId("");
+          if (brand?.meta_connections?.[0]?.instagram_account_id) {
+            const mc = brand.meta_connections[0];
+            setIgAccounts([{ id: mc.instagram_account_id, username: mc.instagram_username || mc.instagram_account_id }]);
+            setSelectedIgAccountId(mc.instagram_account_id);
+          } else {
+            setIgAccounts([]);
+            setSelectedIgAccountId("");
+          }
           return;
         }
         if (d.data) {
           setIgAccounts(d.data);
           // Auto-select priority: 1. brand setting, 2. existing, 3. first from list
-          if (brand?.instagramAccountId && d.data.find(ig => ig.id === brand.instagramAccountId)) {
-            setSelectedIgAccountId(brand.instagramAccountId);
+          const igId = brand?.meta_connections?.[0]?.instagram_account_id
+          if (igId && d.data.find(ig => ig.id === igId)) {
+            setSelectedIgAccountId(igId);
           } else if (d.data.length > 0 && !selectedIgAccountId) {
             setSelectedIgAccountId(d.data[0].id);
           } else if (d.data.length === 0) {
-            setSelectedIgAccountId("");
+            const igId = brand?.meta_connections?.[0]?.instagram_account_id
+            if (igId) {
+              setIgAccounts([{ id: igId, username: igId }]);
+              setSelectedIgAccountId(igId);
+            } else {
+              setSelectedIgAccountId("");
+            }
           }
         }
       })
       .catch(e => {
         console.error("Error fetching IG accounts:", e);
+        if (brand?.meta_connections?.[0]?.instagram_account_id) {
+          const mc = brand.meta_connections[0];
+          setIgAccounts([{ id: mc.instagram_account_id, username: mc.instagram_username || mc.instagram_account_id }]);
+          setSelectedIgAccountId(mc.instagram_account_id);
+        }
       });
   }, [selectedPageId, brand]);
 
   useEffect(() => {
     if (stage === 2 && campaignMode === "existing" && META_TOKEN) {
-      const accountId = brand?.metaAccounts?.[0];
+      const accountId = brand?.meta_connections?.[0]?.ad_account_id;
       if (accountId) {
         fetch(`${META_GRAPH}/${accountId}/campaigns?fields=id,name,status,objective&access_token=${META_TOKEN}`)
           .then(r => r.json()).then(d => d.data && setFetchedCampaigns(d.data)).catch(() => { });
@@ -1214,7 +1231,7 @@ function LaunchStep({ brand, selectedFiles }) {
 
   useEffect(() => {
     if (stage === 2 && META_TOKEN) {
-      const accountId = brand?.metaAccounts?.[0];
+      const accountId = brand?.meta_connections?.[0]?.ad_account_id;
       if (accountId) {
         fetch(`${META_GRAPH}/${accountId}/adspixels?fields=id,name,last_fired_time&access_token=${META_TOKEN}`)
           .then(r => r.json())
@@ -1286,7 +1303,7 @@ Evaluá concisamente:
 
   const handleLaunch = async (targetStatus) => {
     setLaunchState("launching");
-    const accountId = brand?.metaAccounts?.[0];
+    const accountId = brand?.meta_connections?.[0]?.ad_account_id;
     let activeCampaignId = selectedCampaignId;
     let activeAdSetId = selectedAdSetId;
     const results = {};
@@ -1295,7 +1312,7 @@ Evaluá concisamente:
       if (campaignMode === "new") {
         const res = await fetch(`${META_GRAPH}/${accountId}/campaigns`, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: newCampaign.name, objective: newCampaign.objective, status: targetStatus, special_ad_categories: [newCampaign.specialAdCategory], access_token: META_TOKEN })
+          body: JSON.stringify({ name: newCampaign.name, objective: newCampaign.objective, status: targetStatus, special_ad_categories: newCampaign.specialAdCategory ? [newCampaign.specialAdCategory] : [], is_campaign_budget_optimization: false, access_token: META_TOKEN })
         }).then(r => r.json());
         if (res.error) throw new Error(res.error.error_user_msg || res.error.message);
         activeCampaignId = res.id;
@@ -1309,6 +1326,7 @@ Evaluá concisamente:
           billing_event: "IMPRESSIONS",
           optimization_goal: "OFFSITE_CONVERSIONS",
           status: targetStatus,
+          is_adset_budget_sharing_enabled: false,
           access_token: META_TOKEN,
           promoted_object: { pixel_id: selectedPixelId, custom_event_type: selectedEvent }
         };
@@ -1335,11 +1353,21 @@ Evaluá concisamente:
         try {
           let imageHash = null;
           let videoId = null;
+          let videoThumbnailUrl = null;
           const isVideo = asset?.mimeType?.startsWith("video/") || false;
 
           if (asset.source === "Cuenta") {
-            if (isVideo) videoId = asset.id;
-            else imageHash = asset.id;
+            if (isVideo) {
+              videoId = asset.id;
+              try {
+                const tvRes = await fetch(`${META_GRAPH}/${videoId}?fields=picture&access_token=${META_TOKEN}`).then(r => r.json());
+                videoThumbnailUrl = tvRes.picture || null;
+              } catch (e) {
+                console.warn("Error fetching video picture from Cuenta:", e);
+              }
+            } else {
+              imageHash = asset.id;
+            }
           } else {
             const blobUrl = isVideo && asset.videoUrl ? asset.videoUrl : asset.thumbnailLink;
             let tokenHeader = {};
@@ -1358,6 +1386,38 @@ Evaluá concisamente:
               const ur = await fetch(`${META_GRAPH}/${accountId}/advideos`, { method: "POST", body: fd }).then(r => r.json());
               if (ur.error) throw new Error(ur.error.error_user_msg || ur.error.message);
               videoId = ur.id;
+
+              // Generate thumbnail from video blob
+              try {
+                const videoUrl = URL.createObjectURL(blob);
+                const videoEl = document.createElement("video");
+                videoEl.src = videoUrl;
+                videoEl.crossOrigin = "anonymous";
+                await new Promise(resolve => { videoEl.onloadeddata = resolve; videoEl.load(); });
+                videoEl.currentTime = 1;
+                await new Promise(resolve => { videoEl.onseeked = resolve; });
+                const canvas = document.createElement("canvas");
+                canvas.width = videoEl.videoWidth;
+                canvas.height = videoEl.videoHeight;
+                canvas.getContext("2d").drawImage(videoEl, 0, 0);
+                const thumbBlob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.9));
+                const thumbFd = new FormData();
+                thumbFd.append("access_token", META_TOKEN);
+                thumbFd.append("filename", thumbBlob, asset.name + "_thumb.jpg");
+                const thumbRes = await fetch(`${META_GRAPH}/${accountId}/adimages`, { method: "POST", body: thumbFd }).then(r => r.json());
+                if (!thumbRes.error) {
+                  const thumbKey = asset.name + "_thumb.jpg";
+                  const thumbHash = thumbRes.images?.[thumbKey]?.hash || thumbRes.images?.[Object.keys(thumbRes.images)[0]]?.hash;
+                  if (thumbHash) {
+                    // Get image URL from hash
+                    const imgRes = await fetch(`${META_GRAPH}/${accountId}/adimages?hashes=["${thumbHash}"]&fields=url&access_token=${META_TOKEN}`).then(r => r.json());
+                    videoThumbnailUrl = imgRes.data?.[0]?.url || null;
+                  }
+                }
+                URL.revokeObjectURL(videoUrl);
+              } catch (e) {
+                console.warn("Thumbnail generation failed:", e);
+              }
             } else {
               let uploadBlob = blob;
               if (blob.type === "image/webp") {
@@ -1393,13 +1453,13 @@ Evaluá concisamente:
               link_urls: [{ website_url: copyConfig.websiteUrl }],
               ad_formats: [isVideo ? "SINGLE_VIDEO" : "SINGLE_IMAGE"]
             };
-            if (isVideo) creativePayload.asset_feed_spec.videos = [{ video_id: videoId }];
+            if (isVideo) creativePayload.asset_feed_spec.videos = [{ video_id: videoId, thumbnail_url: videoThumbnailUrl || undefined }];
             else creativePayload.asset_feed_spec.images = [{ hash: imageHash }];
             creativePayload.object_story_spec = { page_id: selectedPageId };
-            if (selectedIgAccountId) creativePayload.object_story_spec.instagram_actor_id = selectedIgAccountId;
+
           } else {
             creativePayload.object_story_spec = { page_id: selectedPageId };
-            if (selectedIgAccountId) creativePayload.object_story_spec.instagram_actor_id = selectedIgAccountId;
+
             if (isVideo) {
               creativePayload.object_story_spec.video_data = {
                 video_id: videoId,
@@ -1407,7 +1467,7 @@ Evaluá concisamente:
                 title: copyConfig.headlines[0],
                 link_description: copyConfig.descriptions[0],
                 call_to_action: { type: copyConfig.cta, value: { link: copyConfig.websiteUrl } },
-                image_url: asset.customThumbnail || undefined
+                image_url: asset.customThumbnail || videoThumbnailUrl || undefined
               };
             } else {
               creativePayload.object_story_spec.link_data = {
@@ -1425,7 +1485,10 @@ Evaluá concisamente:
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify(creativePayload)
           }).then(r => r.json());
-          if (crRes.error) throw new Error(crRes.error.error_user_msg || crRes.error.message);
+          if (crRes.error) {
+            console.error("Creative error full response:", JSON.stringify(crRes.error));
+            throw new Error(crRes.error.error_user_msg || crRes.error.message);
+          }
 
           const adRes = await fetch(`${META_GRAPH}/${accountId}/ads`, {
             method: "POST", headers: { "Content-Type": "application/json" },
@@ -1585,7 +1648,7 @@ Evaluá concisamente:
                 </div>
                 <div style={{ background: "#13131f", padding: "12px", borderRadius: "8px", border: "1px solid #1c1c2e" }}>
                   <div style={{ fontSize: "11px", fontFamily: "monospace", color: "#f0f0f8", marginBottom: "8px" }}>CUENTA DE INSTAGRAM</div>
-                  <select value={selectedIgAccountId} onChange={e => setSelectedIgAccountId(e.target.value)} style={{ ...s.input, appearance: "none" }} disabled={!selectedPageId || igAccounts.length === 0}>
+                  <select value={selectedIgAccountId} onChange={e => setSelectedIgAccountId(e.target.value)} style={{ ...s.input, appearance: "none" }} disabled={!selectedPageId}>
                     <option value="">Ninguna cuenta de IG</option>
                     {igAccounts.map(ig => <option key={ig.id} value={ig.id}>@{ig.username}</option>)}
                   </select>
